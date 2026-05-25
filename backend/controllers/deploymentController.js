@@ -18,7 +18,7 @@ const PORT_RANGE_END = 4999;
 const MAX_ACTIVE_DEPLOYMENTS = 20;
 
 const getAvailablePort = async () => {
-  const usedPorts = await Deployment.find({ status: 'running' }).distinct('port');
+  const usedPorts = await Deployment.find({ port: { $ne: null } }).distinct('port');
   for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
     if (!usedPorts.includes(port)) return port;
   }
@@ -234,15 +234,17 @@ async function runDeploymentPipeline(deploymentId) {
     }
 
     // ---------- STEP 3: Ensure Dockerfile ----------
-    await Deployment.findByIdAndUpdate(deploymentId, { status: 'generating' });
+    let currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'generating' });
+    if (!currentDep) { cleanupRepo(deploymentId); return; }
+    
     const dockerfilePath = path.join(buildContextDir, 'Dockerfile');
 
     if (deployment.useCustomDockerfile && fs.existsSync(dockerfilePath)) {
-      await pushLog(deploymentId, 'Using existing Dockerfile from repository', 'info');
+      await pushLog(deploymentId, 'Using Existing Dockerfile', 'info');
     } else if (deployment.generatedDockerfile) {
       // Write the AI-generated or user-edited Dockerfile
       fs.writeFileSync(dockerfilePath, deployment.generatedDockerfile);
-      await pushLog(deploymentId, 'Using AI-generated Dockerfile', 'success');
+      await pushLog(deploymentId, 'Using Generated Dockerfile', 'success');
     } else if (!fs.existsSync(dockerfilePath)) {
       // Auto-generate via AI
       await pushLog(deploymentId, 'No Dockerfile found — generating with AI…', 'info');
@@ -270,7 +272,9 @@ async function runDeploymentPipeline(deploymentId) {
     }
 
     // ---------- STEP 4: Build Docker image ----------
-    await Deployment.findByIdAndUpdate(deploymentId, { status: 'building' });
+    currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'building' });
+    if (!currentDep) { cleanupRepo(deploymentId); return; }
+    
     await pushLog(deploymentId, 'Building Docker image…', 'info');
 
     const imageName = `stackpilot-${deployment._id}`.toLowerCase();
@@ -286,11 +290,20 @@ async function runDeploymentPipeline(deploymentId) {
     }
 
     // ---------- STEP 5: Start container ----------
-    await Deployment.findByIdAndUpdate(deploymentId, { status: 'deploying' });
+    currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'deploying' });
+    if (!currentDep) { 
+      // It was deleted during build. Clean up the built image so it doesn't leak.
+      try { await execPromise(`docker rmi -f ${imageName}`); } catch (_) {}
+      cleanupRepo(deploymentId); 
+      return; 
+    }
     await pushLog(deploymentId, 'Starting container…', 'info');
 
     const exposedPort = deployment.buildConfig?.exposedPort || 3000;
+    
+    // Assign and reserve port immediately in DB to prevent race conditions
     const port = await getAvailablePort();
+    await Deployment.findByIdAndUpdate(deploymentId, { port });
 
     // Build environment variables for the container
     const containerEnv = (deployment.envVars || []).map(e => `${e.key}=${e.value}`);
@@ -324,7 +337,6 @@ async function runDeploymentPipeline(deploymentId) {
         status: 'running',
         containerId: container.id,
         imageId: imageName,
-        port,
         deploymentUrl,
         lastHealthCheck: new Date()
       });
@@ -538,19 +550,22 @@ exports.deleteDeployment = async (req, res) => {
 
     // Cleanup container
     try {
-      execSync(`docker rm -f sp-${deployment._id}`, { stdio: 'ignore' });
-      if (deployment.containerId) {
-        execSync(`docker rm -f ${deployment.containerId}`, { stdio: 'ignore' });
-      }
+      await execPromise(`docker rm -f sp-${deployment._id}`);
     } catch (_) {}
+    if (deployment.containerId) {
+      try {
+        await execPromise(`docker rm -f ${deployment.containerId}`);
+      } catch (_) {}
+    }
 
     // Cleanup repo
     cleanupRepo(deployment._id);
 
     // Cleanup docker image
-    if (deployment.imageId) {
-      try { await docker.getImage(deployment.imageId).remove(); } catch (_) {}
-    }
+    try {
+      const imageName = `stackpilot-${deployment._id}`.toLowerCase();
+      await execPromise(`docker rmi -f ${imageName}`);
+    } catch (_) {}
 
     await Deployment.findByIdAndDelete(deployment._id);
     res.json({ msg: 'Deployment deleted' });
