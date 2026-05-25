@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-royal-900: #1974c8; /* Vibrant background blue */
+  --color-royal-800: #135da1; /* Slightly darker for panels */
+  --color-mint-500: #0df0a3; /* Neon mint for buttons and highlights */
+  --color-mint-400: #5cffce; /* Lighter mint */
+  --color-cyan-500: #00d4ff; 
+  --color-cyan-400: #66e5ff; 
+  
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@layer base {
+  body {
+    @apply bg-royal-900 text-slate-50 antialiased selection:bg-mint-500 selection:text-royal-900;
+  }
+}
+
+@layer utilities {
+  .flat-panel {
+    @apply bg-royal-800 border-none shadow-md rounded-2xl;
+  }
+}
