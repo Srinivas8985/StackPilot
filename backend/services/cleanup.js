@@ -13,11 +13,12 @@ function cleanupRepo(deploymentId) {
   const cloneDir = path.join(REPOS_DIR, `${deploymentId}`);
   try {
     if (fs.existsSync(cloneDir)) {
-      fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-      console.log(`Cleaned up repo: ${cloneDir}`);
+      fs.promises.rm(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        .then(() => console.log(`Cleaned up repo: ${cloneDir}`))
+        .catch(err => console.error(`Async cleanup repo error for ${deploymentId}:`, err.message));
     }
   } catch (err) {
-    console.error(`Cleanup repo error for ${deploymentId}:`, err.message);
+    console.error(`Cleanup repo check error for ${deploymentId}:`, err.message);
   }
 }
 
@@ -35,6 +36,7 @@ async function runCleanupCycle() {
     if (fs.existsSync(REPOS_DIR)) {
       const dirs = fs.readdirSync(REPOS_DIR);
       for (const dir of dirs) {
+        if (dir === 'temp') continue; // Skip the temp directory
         try {
           const deployment = await Deployment.findById(dir);
           // If deployment doesn't exist, or is running/stopped/failed — clean the repo
@@ -49,6 +51,28 @@ async function runCleanupCycle() {
     }
   } catch (err) {
     console.error('[Cleanup] Repo cleanup error:', err.message);
+  }
+
+  // 1b. Clean up abandoned temp repos older than 1 hour
+  try {
+    const tempDir = path.join(REPOS_DIR, 'temp');
+    if (fs.existsSync(tempDir)) {
+      const tempFolders = fs.readdirSync(tempDir);
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      for (const folder of tempFolders) {
+        const folderPath = path.join(tempDir, folder);
+        try {
+          const stats = fs.statSync(folderPath);
+          if (stats.mtimeMs < oneHourAgo) {
+            fs.promises.rm(folderPath, { recursive: true, force: true })
+              .then(() => console.log(`[Cleanup] Removed old temp workspace: ${folder}`))
+              .catch(() => {});
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.error('[Cleanup] Temp repo cleanup error:', err.message);
   }
 
   // 2. Remove containers for stopped deployments older than 24h

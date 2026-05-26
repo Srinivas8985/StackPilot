@@ -26,6 +26,11 @@ export default function Login() {
     try {
       const res = await api.post('/auth/login', formData);
       localStorage.setItem('token', res.data.token);
+      
+      // Fetch user details to get the role
+      const userRes = await api.get('/auth/me');
+      localStorage.setItem('user', JSON.stringify(userRes.data));
+
       setLoading(false);
       navigate('/dashboard');
     } catch (err) {

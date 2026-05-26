@@ -101,6 +101,7 @@ RULES:
 - Include proper EXPOSE
 - IMPORTANT: Use wildcards for lockfiles (e.g., COPY package*.json ./) because package-lock.json or yarn.lock might not exist in the repository! NEVER explicitly copy a lockfile by exact name.
 - IMPORTANT: For CMD or ENTRYPOINT, if using the array/exec form, separate the arguments properly (e.g. CMD ["npm", "start"] NOT CMD ["npm start"]). Alternatively, use the shell form (e.g. CMD npm start).
+- CRITICAL: Always use "npm install" (or "npm install --omit=dev" for backend) instead of "npm ci". Many user repositories do not commit package-lock.json, so "npm ci" will cause the build to crash!
 - CRITICAL: The Docker build context is strictly the folder shown in the structure below. DO NOT prepend parent folder names (like "frontend/" or "server/") in your COPY commands. Act as if the provided structure is the absolute root of the repository.
 
 PROJECT DETAILS:
@@ -146,6 +147,7 @@ PROJECT DETAILS:
 - Use multi-stage build: build with Node, serve with nginx
 - Build output is typically in dist/ (Vite) or build/ (CRA)
 - Use nginx:alpine for serving
+- CRITICAL: Do NOT use --omit=dev, --production, or similar flags during npm install. Frontend build tools (like Vite) are stored in devDependencies and MUST be installed to run the build!
 - CRITICAL: DO NOT attempt to COPY an nginx.conf file from the repository! It does not exist.
 - INSTEAD, you MUST generate the nginx configuration dynamically inside the Dockerfile using a RUN command.
 - Example: RUN echo 'server { listen 3000; root /usr/share/nginx/html; location / { try_files $uri $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf\n`;
@@ -154,7 +156,8 @@ PROJECT DETAILS:
 - This is a Next.js project
 - Use standalone output mode if configured
 - Use multi-stage build
-- Copy .next/standalone and .next/static\n`;
+- Copy .next/standalone and .next/static
+- CRITICAL: Do NOT use --omit=dev or --production during the builder stage's npm install, as devDependencies are required to build Next.js!\n`;
   } else if (projectType === 'flask') {
     prompt += `\nFRAMEWORK HINTS:
 - Use python:3.12-slim

@@ -10,11 +10,21 @@ import Navbar from './Navbar';
 export default function SidebarLayout({ children }) {
   const location = useLocation();
   
+  let userRole = 'user';
+  try {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user && user.role) userRole = user.role;
+  } catch (err) {}
+
   const SIDEBAR_LINKS = [
     { label: 'Overview', path: '/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Deployments', path: '/deployments', icon: <Server className="w-5 h-5" /> },
     { label: 'New Deployment', path: '/deploy', icon: <Rocket className="w-5 h-5" /> },
   ];
+
+  if (userRole === 'admin') {
+    SIDEBAR_LINKS.push({ label: 'Admin Portal', path: '/admin', icon: <Settings className="w-5 h-5" /> });
+  }
 
   return (
     <div className="min-h-screen bg-royal-900 flex flex-col overflow-hidden text-slate-50">

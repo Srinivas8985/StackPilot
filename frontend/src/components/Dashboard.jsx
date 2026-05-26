@@ -201,6 +201,9 @@ export default function Dashboard() {
                                   <div className="font-bold text-white truncate max-w-[150px]">{dep.name}</div>
                                   <div className="text-xs text-slate-400 flex items-center gap-1">
                                     <GitBranch className="w-3 h-3" /> {dep.branch}
+                                    {dep.autoDeployEnabled && (
+                                      <span className="text-mint-400 ml-1" title="Auto-deploy enabled"><Zap className="w-3 h-3 inline" /></span>
+                                    )}
                                   </div>
                                 </div>
                               </div>

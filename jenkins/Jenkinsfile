@@ -1,0 +1,155 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'DEPLOYMENT_ID',  description: 'StackPilot Deployment ID')
+        string(name: 'REPO_URL',       description: 'GitHub repository URL')
+        string(name: 'BRANCH',         defaultValue: 'main', description: 'Branch to clone')
+        string(name: 'PROJECT_TYPE',   defaultValue: 'auto', description: 'Project type')
+        string(name: 'ROOT_FOLDER',    defaultValue: '.', description: 'Root folder for build context')
+        string(name: 'PORT',           defaultValue: '3000', description: 'Container exposed port')
+        string(name: 'CONTAINER_NAME', description: 'Docker container name')
+        string(name: 'IMAGE_NAME',     description: 'Docker image name')
+        string(name: 'DOCKERFILE_B64', defaultValue: '', description: 'Base64 encoded Dockerfile content')
+    }
+
+    environment {
+        WORKSPACE_DIR = "${WORKSPACE}/repo-${params.DEPLOYMENT_ID}"
+    }
+
+    stages {
+        stage('Cleanup Workspace') {
+            steps {
+                script {
+                    echo "=== Cleaning workspace ==="
+                    if (fileExists(env.WORKSPACE_DIR)) {
+                        dir(env.WORKSPACE_DIR) {
+                            deleteDir()
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Clone Repository') {
+            steps {
+                script {
+                    echo "=== Cloning ${params.REPO_URL} (branch: ${params.BRANCH}) ==="
+                    bat "git clone --depth 1 --branch ${params.BRANCH} ${params.REPO_URL} ${env.WORKSPACE_DIR}"
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def buildContext = "${env.WORKSPACE_DIR}/${params.ROOT_FOLDER}"
+                    echo "=== Building Docker image: ${params.IMAGE_NAME} ==="
+                    echo "=== Build context: ${buildContext} ==="
+
+                    // Write Dockerfile if provided via base64 parameter
+                    if (params.DOCKERFILE_B64 != '') {
+                        try {
+                            // Use Windows certutil to decode base64 to avoid Jenkins Groovy Sandbox security errors
+                            writeFile file: "${buildContext}/Dockerfile.b64", text: params.DOCKERFILE_B64
+                            bat "certutil -decode ${buildContext}/Dockerfile.b64 ${buildContext}/Dockerfile"
+                            echo "=== Successfully wrote StackPilot generated Dockerfile ==="
+                        } catch (Exception e) {
+                            echo "WARNING: Failed to decode DOCKERFILE_B64 parameter"
+                        }
+                    }
+
+                    // Check if Dockerfile exists in build context
+                    if (!fileExists("${buildContext}/Dockerfile")) {
+                        echo "WARNING: No Dockerfile found in build context. StackPilot should have generated one."
+                        error("No Dockerfile found. Ensure StackPilot generates it before triggering Jenkins.")
+                    }
+
+                    bat "docker build -t ${params.IMAGE_NAME} ${buildContext}"
+                }
+            }
+        }
+
+        stage('Stop Old Container') {
+            steps {
+                script {
+                    echo "=== Stopping old container: ${params.CONTAINER_NAME} ==="
+                    catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                        bat "docker rm -f ${params.CONTAINER_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy New Container') {
+            steps {
+                script {
+                    echo "=== Starting new container: ${params.CONTAINER_NAME} on port ${params.PORT} ==="
+                    bat """
+                        docker run -d ^
+                            --name ${params.CONTAINER_NAME} ^
+                            -p ${params.PORT}:${params.PORT} ^
+                            -e PORT=${params.PORT} ^
+                            --memory=512m ^
+                            --cpu-shares=256 ^
+                            --restart=unless-stopped ^
+                            ${params.IMAGE_NAME}
+                    """
+                    echo "=== Container deployed successfully ==="
+                    echo "=== Accessible at http://localhost:${params.PORT} ==="
+                }
+            }
+        }
+
+        stage('Update StackPilot Backend') {
+            steps {
+                script {
+                    echo "=== Syncing runtime status with StackPilot ==="
+                    bat """
+                        curl -X POST http://localhost:5000/api/deployments/update-runtime ^
+                        -H "Content-Type: application/json" ^
+                        -d "{\\"deploymentId\\":\\"${params.DEPLOYMENT_ID}\\",\\"containerName\\":\\"${params.CONTAINER_NAME}\\",\\"imageName\\":\\"${params.IMAGE_NAME}\\",\\"status\\":\\"running\\",\\"port\\":${params.PORT},\\"buildStatus\\":\\"success\\"}"
+                    """
+                }
+            }
+        }
+
+        stage('Cleanup') {
+            steps {
+                script {
+                    echo "=== Cleaning up temporary files ==="
+                    if (fileExists(env.WORKSPACE_DIR)) {
+                        dir(env.WORKSPACE_DIR) {
+                            deleteDir()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=== Pipeline completed successfully for deployment ${params.DEPLOYMENT_ID} ==="
+        }
+        failure {
+            echo "=== Pipeline FAILED for deployment ${params.DEPLOYMENT_ID} ==="
+            script {
+                // Try to clean up on failure
+                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                    bat "docker rm -f ${params.CONTAINER_NAME}"
+                }
+            }
+        }
+        always {
+            // Cleanup workspace
+            script {
+                if (fileExists(env.WORKSPACE_DIR)) {
+                    dir(env.WORKSPACE_DIR) {
+                        deleteDir()
+                    }
+                }
+            }
+        }
+    }
+}

@@ -59,6 +59,7 @@ export default function DeploymentWizard() {
   // Step 5: Dockerfile
   const [dockerfile, setDockerfile] = useState('');
   const [useCustomDockerfile, setUseCustomDockerfile] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState('');
 
   // Step 6: Deploy result
   const [deployResult, setDeployResult] = useState(null);
@@ -74,6 +75,7 @@ export default function DeploymentWizard() {
         const parts = repoUrl.replace(/\.git$/, '').split('/');
         setName(parts[parts.length - 1] || 'my-app');
       }
+      if (res.data.tempId) setWorkspaceId(res.data.tempId);
       setStep(1);
     } catch (err) {
       setError(err.response?.data?.msg || 'Failed to analyze repository');
@@ -85,7 +87,7 @@ export default function DeploymentWizard() {
     setError(''); setLoading(true);
     try {
       const res = await api.post('/deployments/generate-dockerfile', {
-        repoUrl, branch, projectType, deployFolder, buildConfig
+        repoUrl, branch, projectType, deployFolder, buildConfig, workspaceId
       });
       setDockerfile(res.data.dockerfile);
       setStep(4);
@@ -101,7 +103,8 @@ export default function DeploymentWizard() {
         name, repoUrl, branch, environment, projectType, deployFolder,
         envVars: envVars.filter(e => e.key && e.value),
         buildConfig, useCustomDockerfile,
-        generatedDockerfile: useCustomDockerfile ? null : dockerfile
+        generatedDockerfile: useCustomDockerfile ? null : dockerfile,
+        workspaceId
       };
       const res = await api.post('/deployments', payload);
       setDeployResult(res.data);

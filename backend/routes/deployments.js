@@ -72,4 +72,21 @@ router.post('/:id/redeploy', auth, deploymentController.redeployDeployment);
 // @access  Private
 router.delete('/:id', auth, deploymentController.deleteDeployment);
 
+// =============== CI/CD ENDPOINTS ===============
+
+// @route   POST api/deployments/:id/auto-deploy
+// @desc    Toggle auto-deploy for a deployment
+// @access  Private
+router.post('/:id/auto-deploy', auth, deploymentController.toggleAutoDeploy);
+
+// @route   POST api/deployments/:id/force-check
+// @desc    Force check for new commits
+// @access  Private
+router.post('/:id/force-check', auth, deploymentController.forceCheck);
+
+// @route   POST api/deployments/update-runtime
+// @desc    Update runtime information from Jenkins CI/CD
+// @access  Public (from Jenkins)
+router.post('/update-runtime', deploymentController.updateRuntime);
+
 module.exports = router;

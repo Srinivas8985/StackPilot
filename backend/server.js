@@ -4,7 +4,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const deploymentsRoutes = require('./routes/deployments');
+const adminRoutes = require('./routes/admin');
 const { startCleanupScheduler } = require('./services/cleanup');
+const { startPolling } = require('./services/pollingService');
 
 const app = express();
 
@@ -15,6 +17,10 @@ app.use(express.json({ limit: '5mb' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/deployments', deploymentsRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Health check
+app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 // MongoDB connection
 const PORT = process.env.PORT || 5000;
@@ -27,6 +33,8 @@ mongoose.connect(MONGO_URI)
       console.log(`Server running on port ${PORT}`);
       // Start the cleanup scheduler for temp repos and stale containers
       startCleanupScheduler();
+      // Start GitHub commit polling service
+      startPolling();
     });
   })
   .catch((err) => {
