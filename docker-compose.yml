@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # MongoDB Database Service
+  mongodb:
+    image: mongo:latest
+    container_name: stackpilot-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - stackpilot-network
+
+  # Node.js API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stackpilot-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongodb:27017/stackpilot
+      - JWT_SECRET=${JWT_SECRET} 
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - HOST=localhost
+    volumes:
+      # Mount host Docker socket so StackPilot can build & start containers as a sidecar
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount backend's repository storage for cloning
+      - backend_repos:/usr/src/app/repos
+    
+    depends_on:
+      - mongodb
+    networks:
+      - stackpilot-network
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:5000/api # Points to backend during local runs
+    container_name: stackpilot-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - stackpilot-network
+
+  # Prometheus Scraping Service
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: stackpilot-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend
+    networks:
+      - stackpilot-network
+
+  # Grafana Dashboard Visualization Service
+  grafana:
+    image: grafana/grafana:latest
+    container_name: stackpilot-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - stackpilot-network
+
+volumes:
+  mongodb_data:
+  backend_repos:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  stackpilot-network:
+    driver: bridge
