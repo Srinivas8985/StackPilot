@@ -173,7 +173,7 @@ async function startPolling() {
   if (pollingTimer) return;
 
   const config = await SystemConfig.getConfig();
-  const interval = config.defaultPollingIntervalMs || 60000;
+  const interval = config.defaultPollingIntervalMs || 90000;
 
   // Initial check after 10 seconds
   setTimeout(() => pollOnce(), 10000);

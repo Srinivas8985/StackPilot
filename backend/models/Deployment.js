@@ -134,7 +134,7 @@ const deploymentSchema = new mongoose.Schema({
   },
   pollingInterval: {
     type: Number,
-    default: 60000 // 60 seconds
+    default: 90000 // 90 seconds
   },
   redeployCount: {
     type: Number,
