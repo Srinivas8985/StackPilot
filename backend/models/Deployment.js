@@ -6,6 +6,15 @@ const logEntrySchema = new mongoose.Schema({
   type: { type: String, enum: ['info', 'error', 'success', 'warning'], default: 'info' }
 }, { _id: false });
 
+const redeployHistorySchema = new mongoose.Schema({
+  triggeredAt: { type: Date, default: Date.now },
+  trigger: { type: String, enum: ['manual', 'auto', 'jenkins', 'admin'], default: 'manual' },
+  commitSha: { type: String, default: null },
+  status: { type: String, enum: ['queued', 'building', 'success', 'failed'], default: 'queued' },
+  jenkinsBuildNumber: { type: Number, default: null },
+  duration: { type: Number, default: null }
+}, { _id: false });
+
 const envVarSchema = new mongoose.Schema({
   key: { type: String, required: true },
   value: { type: String, required: true }
@@ -107,6 +116,40 @@ const deploymentSchema = new mongoose.Schema({
   },
   lastHealthCheck: {
     type: Date,
+    default: null
+  },
+
+  // === CI/CD & GitHub Polling ===
+  autoDeployEnabled: {
+    type: Boolean,
+    default: false
+  },
+  lastCommitSha: {
+    type: String,
+    default: null
+  },
+  lastCheckedAt: {
+    type: Date,
+    default: null
+  },
+  pollingInterval: {
+    type: Number,
+    default: 90000 // 90 seconds
+  },
+  redeployCount: {
+    type: Number,
+    default: 0
+  },
+  redeployHistory: [redeployHistorySchema],
+
+  // === Jenkins ===
+  jenkinsBuildNumber: {
+    type: Number,
+    default: null
+  },
+  jenkinsBuildStatus: {
+    type: String,
+    enum: ['idle', 'queued', 'building', 'success', 'failed', null],
     default: null
   }
 }, { timestamps: true });

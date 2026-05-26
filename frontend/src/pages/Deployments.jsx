@@ -8,7 +8,7 @@ import {
   Rocket, Plus, Play, Square, RotateCcw, Trash2,
   GitBranch, Globe, Clock, CheckCircle2, AlertCircle,
   Loader2, ExternalLink, Terminal, Server, ChevronDown,
-  Search, Filter, XCircle
+  Search, Filter, XCircle, Zap, RefreshCw, GitCommit
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -83,6 +83,29 @@ export default function Deployments() {
     setActionLoading(id);
     try {
       await api.delete(`/deployments/${id}`);
+      fetchDeployments();
+    } catch (err) { console.error(err); }
+    setActionLoading(null);
+  };
+
+  const handleToggleAutoDeploy = async (id, currentStatus) => {
+    setActionLoading(`autodeploy-${id}`);
+    try {
+      await api.post(`/deployments/${id}/auto-deploy`, { enabled: !currentStatus });
+      fetchDeployments();
+    } catch (err) { console.error(err); }
+    setActionLoading(null);
+  };
+
+  const handleForceCheck = async (id) => {
+    setActionLoading(`forcecheck-${id}`);
+    try {
+      const res = await api.post(`/deployments/${id}/force-check`);
+      if (res.data.changed) {
+        alert(`New commit found: ${res.data.sha.slice(0,7)}. Triggering redeploy...`);
+      } else {
+        alert('No new commits found.');
+      }
       fetchDeployments();
     } catch (err) { console.error(err); }
     setActionLoading(null);
@@ -224,6 +247,79 @@ export default function Deployments() {
                         <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-800 rounded text-slate-400">
                           {dep.environment}
                         </span>
+                        {dep.redeployCount > 0 && (
+                          <span className="flex items-center gap-1 text-mint-400">
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            {dep.redeployCount} redeploys
+                          </span>
+                        )}
+                        {dep.jenkinsBuildStatus && (
+                          <span className={`flex items-center gap-1 ${dep.jenkinsBuildStatus === 'success' ? 'text-green-400' : dep.jenkinsBuildStatus === 'failed' ? 'text-red-400' : 'text-amber-400'}`}>
+                            <Server className="w-3.5 h-3.5" />
+                            Build: {dep.jenkinsBuildStatus}
+                          </span>
+                        )}
+                        
+                        {/* Container Info Block */}
+                        {(dep.containerId || dep.imageId) && (
+                          <div className="w-full flex items-center gap-3 mt-2 pt-2 border-t border-slate-800/50">
+                            {dep.containerId && (
+                              <span className="flex items-center gap-1 font-mono text-[10px] text-slate-500 bg-royal-950 px-2 py-1 rounded">
+                                <Terminal className="w-3 h-3" />
+                                {dep.containerId}
+                              </span>
+                            )}
+                            {dep.imageId && (
+                              <span className="flex items-center gap-1 font-mono text-[10px] text-slate-500 bg-royal-950 px-2 py-1 rounded">
+                                <Rocket className="w-3 h-3" />
+                                {dep.imageId}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* CI/CD Badges */}
+                        {dep.repoUrl.includes('github.com') && (
+                          <div className="flex items-center gap-2 ml-auto">
+                            {dep.lastCommitSha && (
+                              <span className="flex items-center gap-1 text-slate-400 text-[10px] font-mono bg-royal-950 px-2 py-1 rounded">
+                                <GitCommit className="w-3 h-3" />
+                                {dep.lastCommitSha.slice(0, 7)}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleToggleAutoDeploy(dep._id, dep.autoDeployEnabled)}
+                              disabled={actionLoading === `autodeploy-${dep._id}`}
+                              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold transition-colors ${
+                                dep.autoDeployEnabled
+                                  ? 'bg-mint-500/10 text-mint-400 hover:bg-mint-500/20'
+                                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                              }`}
+                              title="Toggle GitHub Polling"
+                            >
+                              {actionLoading === `autodeploy-${dep._id}` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3" />
+                              )}
+                              Auto Deploy
+                            </button>
+                            {dep.autoDeployEnabled && (
+                              <button
+                                onClick={() => handleForceCheck(dep._id)}
+                                disabled={actionLoading === `forcecheck-${dep._id}`}
+                                className="p-1 rounded hover:bg-royal-700 text-slate-400 hover:text-white transition-colors"
+                                title="Force check for commits"
+                              >
+                                {actionLoading === `forcecheck-${dep._id}` ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* URL */}

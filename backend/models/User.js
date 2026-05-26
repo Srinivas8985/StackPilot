@@ -16,6 +16,27 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true
+  },
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  githubId: {
+    type: String,
+    default: null
+  },
+  githubUsername: {
+    type: String,
+    default: null
+  },
+  githubAvatar: {
+    type: String,
+    default: null
+  },
+  githubAccessToken: {
+    type: String,
+    default: null
   }
 }, { timestamps: true });
 

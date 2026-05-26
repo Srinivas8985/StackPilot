@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: stackpilot-jenkins
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      # Mount Docker socket so Jenkins can build/run containers
+      - //./pipe/docker_engine://./pipe/docker_engine
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+    restart: unless-stopped
+    networks:
+      - stackpilot
+
+volumes:
+  jenkins_home:
+    driver: local
+
+networks:
+  stackpilot:
+    driver: bridge

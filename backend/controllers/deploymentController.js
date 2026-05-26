@@ -8,9 +8,11 @@ const Deployment = require('../models/Deployment');
 const { analyzeRepository, getAIContext } = require('../services/repoAnalyzer');
 const { generateDockerfile } = require('../services/dockerfileGenerator');
 const { cleanupRepo } = require('../services/cleanup');
+const { forceCheckDeployment } = require('../services/pollingService');
 
 const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '//./pipe/docker_engine' });
 const REPOS_DIR = path.join(__dirname, '..', 'repos');
+const REPOS_TEMP_DIR = path.join(REPOS_DIR, 'temp');
 
 // Port pool management
 const PORT_RANGE_START = 4000;
@@ -62,11 +64,13 @@ exports.analyzeRepo = async (req, res) => {
 
   // Use a temporary ID for the analysis clone
   const tempId = `analyze-${Date.now()}`;
-  const cloneDir = path.join(REPOS_DIR, tempId);
+  const cloneDir = path.join(REPOS_TEMP_DIR, tempId);
 
   try {
-    if (!fs.existsSync(REPOS_DIR)) fs.mkdirSync(REPOS_DIR, { recursive: true });
-    if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    if (!fs.existsSync(REPOS_TEMP_DIR)) fs.mkdirSync(REPOS_TEMP_DIR, { recursive: true });
+    if (fs.existsSync(cloneDir)) {
+      try { await fs.promises.rm(cloneDir, { recursive: true, force: true }); } catch (_) {}
+    }
 
     execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} "${cloneDir}"`, {
       timeout: 60000
@@ -74,13 +78,11 @@ exports.analyzeRepo = async (req, res) => {
 
     const analysis = analyzeRepository(cloneDir);
 
-    // Clean up immediately — we'll clone again during actual deployment
-    fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-
+    // DO NOT clean up here. We keep the temp folder for the rest of the wizard and pipeline.
     res.json({ analysis, tempId });
   } catch (err) {
     // Cleanup on failure
-    try { if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (_) {}
+    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(()=>{}); } catch (_) {}
     console.error('Analyze error:', err.message);
     res.status(400).json({ msg: `Failed to clone/analyze: ${err.message.substring(0, 200)}` });
   }
@@ -91,22 +93,25 @@ exports.analyzeRepo = async (req, res) => {
 // POST /api/deployments/generate-dockerfile
 // ============================================================
 exports.generateDockerfileEndpoint = async (req, res) => {
-  const { repoUrl, branch = 'main', projectType, deployFolder = '.', buildConfig = {} } = req.body;
+  const { repoUrl, branch = 'main', projectType, deployFolder = '.', buildConfig = {}, workspaceId } = req.body;
 
   if (!repoUrl) {
     return res.status(400).json({ msg: 'Repository URL is required' });
   }
 
-  const tempId = `dockerfile-${Date.now()}`;
-  const cloneDir = path.join(REPOS_DIR, tempId);
+  // Use existing workspace if provided, otherwise create a new one (fallback)
+  const tempId = workspaceId || `dockerfile-${Date.now()}`;
+  const cloneDir = path.join(REPOS_TEMP_DIR, tempId);
 
   try {
-    if (!fs.existsSync(REPOS_DIR)) fs.mkdirSync(REPOS_DIR, { recursive: true });
-    if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-
-    execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} "${cloneDir}"`, {
-      timeout: 180000
-    });
+    if (!fs.existsSync(REPOS_TEMP_DIR)) fs.mkdirSync(REPOS_TEMP_DIR, { recursive: true });
+    
+    // Only clone if it doesn't already exist (i.e. not using a passed workspace)
+    if (!fs.existsSync(cloneDir)) {
+      execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} "${cloneDir}"`, {
+        timeout: 180000
+      });
+    }
 
     const aiContext = getAIContext(cloneDir, deployFolder);
     const exposedPort = buildConfig.exposedPort || 3000;
@@ -118,12 +123,10 @@ exports.generateDockerfileEndpoint = async (req, res) => {
       exposedPort
     });
 
-    // Cleanup immediately
-    fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-
-    res.json({ dockerfile });
+    // DO NOT clean up. The pipeline will reuse or clean it up.
+    res.json({ dockerfile, workspaceId: tempId });
   } catch (err) {
-    try { if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (_) {}
+    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(()=>{}); } catch (_) {}
     console.error('Dockerfile generation error:', err.message);
     res.status(500).json({ msg: `Failed to generate Dockerfile: ${err.message.substring(0, 200)}` });
   }
@@ -137,7 +140,7 @@ exports.createDeployment = async (req, res) => {
   const {
     name, repoUrl, branch = 'main', environment = 'development',
     deployFolder = '.', envVars = [],
-    buildConfig = {}, generatedDockerfile, useCustomDockerfile = false
+    buildConfig = {}, generatedDockerfile, useCustomDockerfile = false, workspaceId
   } = req.body;
 
   let { projectType } = req.body;
@@ -186,7 +189,7 @@ exports.createDeployment = async (req, res) => {
     await deployment.save();
 
     // Start async deployment pipeline
-    runDeploymentPipeline(deployment._id);
+    runDeploymentPipeline(deployment._id, workspaceId);
 
     res.status(201).json(deployment);
   } catch (err) {
@@ -198,7 +201,7 @@ exports.createDeployment = async (req, res) => {
 // ============================================================
 // THE DEPLOYMENT PIPELINE — runs asynchronously
 // ============================================================
-async function runDeploymentPipeline(deploymentId) {
+async function runDeploymentPipeline(deploymentId, workspaceId) {
   if (!fs.existsSync(REPOS_DIR)) fs.mkdirSync(REPOS_DIR, { recursive: true });
 
   try {
@@ -209,14 +212,24 @@ async function runDeploymentPipeline(deploymentId) {
 
     // ---------- STEP 1: Clone ----------
     await Deployment.findByIdAndUpdate(deploymentId, { status: 'cloning' });
-    await pushLog(deploymentId, `Cloning repository: ${deployment.repoUrl}`, 'info');
 
     try {
-      if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-      await execPromise(`git clone --depth 1 --branch ${deployment.branch} ${deployment.repoUrl} "${cloneDir}"`, {
-        timeout: 180000
-      });
-      await pushLog(deploymentId, 'Repository cloned successfully', 'success');
+      if (fs.existsSync(cloneDir)) {
+        await fs.promises.rm(cloneDir, { recursive: true, force: true });
+      }
+      
+      const tempWorkspace = workspaceId ? path.join(REPOS_TEMP_DIR, workspaceId) : null;
+      if (tempWorkspace && fs.existsSync(tempWorkspace)) {
+        await pushLog(deploymentId, `Linking existing analyzed workspace`, 'info');
+        fs.renameSync(tempWorkspace, cloneDir);
+        await pushLog(deploymentId, 'Workspace linked successfully', 'success');
+      } else {
+        await pushLog(deploymentId, `Cloning repository: ${deployment.repoUrl}`, 'info');
+        await execPromise(`git clone --depth 1 --branch ${deployment.branch} ${deployment.repoUrl} "${cloneDir}"`, {
+          timeout: 180000
+        });
+        await pushLog(deploymentId, 'Repository cloned successfully', 'success');
+      }
     } catch (cloneErr) {
       await pushLog(deploymentId, `Clone failed: ${cloneErr.message}`, 'error');
       await Deployment.findByIdAndUpdate(deploymentId, { status: 'failed' });
@@ -645,5 +658,145 @@ exports.getStats = async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// ============================================================
+// CI/CD ENDPOINTS
+// ============================================================
+
+// POST /api/deployments/:id/auto-deploy — Toggle auto-deploy
+exports.toggleAutoDeploy = async (req, res) => {
+  try {
+    const deployment = await Deployment.findById(req.params.id);
+    if (!deployment) return res.status(404).json({ msg: 'Deployment not found' });
+    if (deployment.user.toString() !== req.user.id) {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const { enabled } = req.body;
+    deployment.autoDeployEnabled = enabled !== undefined ? enabled : !deployment.autoDeployEnabled;
+
+    // If enabling for first time, fetch initial commit SHA
+    if (deployment.autoDeployEnabled && !deployment.lastCommitSha && deployment.repoUrl.includes('github.com')) {
+      const { fetchLatestCommit } = require('../services/pollingService');
+      const commit = await fetchLatestCommit(deployment.repoUrl, deployment.branch);
+      if (commit) {
+        deployment.lastCommitSha = commit.sha;
+        deployment.lastCheckedAt = new Date();
+      }
+    }
+
+    await deployment.save();
+    await pushLog(deployment._id, `Auto-deploy ${deployment.autoDeployEnabled ? 'enabled' : 'disabled'}`, 'info');
+    res.json(deployment);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// POST /api/deployments/:id/force-check — Force check for new commits
+exports.forceCheck = async (req, res) => {
+  try {
+    const deployment = await Deployment.findById(req.params.id);
+    if (!deployment) return res.status(404).json({ msg: 'Deployment not found' });
+    if (deployment.user.toString() !== req.user.id) {
+      return res.status(403).json({ msg: 'Not authorized' });
+    }
+
+    const result = await forceCheckDeployment(req.params.id);
+    res.json(result);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// ============================================================
+// INTERNAL: Trigger redeploy (used by polling service)
+// ============================================================
+exports.triggerInternalRedeploy = function (deploymentId) {
+  // Same logic as the redeploy endpoint but without auth check
+  (async () => {
+    try {
+      const deployment = await Deployment.findById(deploymentId);
+      if (!deployment) return;
+
+      // Remove old container
+      try {
+        await execPromise(`docker rm -f sp-${deployment._id}`);
+        if (deployment.containerId) {
+          await execPromise(`docker rm -f ${deployment.containerId}`);
+        }
+        const imageName = `stackpilot-${deployment._id}`.toLowerCase();
+        await execPromise(`docker rmi -f ${imageName}`);
+      } catch (_) {}
+
+      deployment.status = 'queued';
+      deployment.containerId = null;
+      deployment.port = null;
+      deployment.deploymentUrl = null;
+      deployment.logs = [];
+      await deployment.save();
+
+      runDeploymentPipeline(deployment._id);
+    } catch (err) {
+      console.error(`[Internal Redeploy] Error for ${deploymentId}:`, err.message);
+    }
+  })();
+};
+
+// ============================================================
+// API: Update runtime info from Jenkins CI/CD
+// ============================================================
+exports.updateRuntime = async (req, res) => {
+  try {
+    const {
+      deploymentId,
+      containerName,
+      imageName,
+      status,
+      port,
+      lastCommitSha,
+      buildStatus,
+      redeployedAt
+    } = req.body;
+
+    if (!deploymentId) {
+      return res.status(400).json({ msg: 'Deployment ID is required' });
+    }
+
+    const deployment = await Deployment.findById(deploymentId);
+    if (!deployment) {
+      return res.status(404).json({ msg: 'Deployment not found' });
+    }
+
+    // Update runtime metadata
+    if (containerName) deployment.containerId = containerName;
+    if (imageName) deployment.imageId = imageName;
+    if (status) deployment.status = status;
+    if (port) {
+      deployment.port = port;
+      deployment.deploymentUrl = `http://localhost:${port}`;
+    }
+    if (lastCommitSha) deployment.lastCommitSha = lastCommitSha;
+    if (buildStatus) deployment.jenkinsBuildStatus = buildStatus;
+    
+    // Create redeploy history entry
+    deployment.redeployCount = (deployment.redeployCount || 0) + 1;
+    deployment.redeployHistory.push({
+      triggeredAt: redeployedAt || new Date(),
+      trigger: 'jenkins',
+      commitSha: lastCommitSha || deployment.lastCommitSha,
+      status: buildStatus === 'success' ? 'success' : 'failed'
+    });
+
+    await deployment.save();
+
+    res.json(deployment);
+  } catch (err) {
+    console.error('[Update Runtime API Error]', err.message);
+    res.status(500).json({ msg: 'Server error updating runtime' });
   }
 };
