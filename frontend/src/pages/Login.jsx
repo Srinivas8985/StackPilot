@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api';
 import { Eye, EyeOff, Terminal, Rocket, Loader2 } from 'lucide-react';
+import { FaGithub } from "react-icons/fa";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -124,6 +125,23 @@ export default function Login() {
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sign In'}
             </button>
           </form>
+
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-royal-800/50"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-royal-950/80 text-slate-500">Or continue with</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => window.location.href = 'http://localhost:5000/api/auth/github'}
+            className="w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-white font-semibold py-3.5 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 group"
+          >
+            <FaGithub className="w-5 h-5 group-hover:text-mint-400 transition-colors" />
+            Continue with GitHub
+          </button>
 
           <p className="text-center text-slate-400 text-sm mt-8">
             Don't have an account?{' '}

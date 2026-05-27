@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
@@ -6,9 +6,9 @@ import api from '../api';
 import {
   Globe, GitBranch, Search, Settings, FileCode, Rocket,
   Loader2, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft,
-  FolderTree, Cpu, Variable, Eye, ChevronRight, X, Plus, Trash2
+  FolderTree, Cpu, Variable, Eye, ChevronRight, X, Plus, Trash2, Lock
 } from 'lucide-react';
-
+import { FaGithub } from 'react-icons/fa'
 const STEPS = [
   { label: 'Repository', icon: Globe },
   { label: 'Analysis', icon: Search },
@@ -40,6 +40,26 @@ export default function DeploymentWizard() {
   const [repoUrl, setRepoUrl] = useState('');
   const [branch, setBranch] = useState('main');
   const [name, setName] = useState('');
+  const [githubRepos, setGithubRepos] = useState([]);
+  const [loadingRepos, setLoadingRepos] = useState(true);
+
+  useEffect(() => {
+    // Check if user is connected to github
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const u = JSON.parse(userStr);
+      if (u.githubId) {
+        api.get('/github/repos')
+          .then(res => setGithubRepos(res.data))
+          .catch(err => console.error(err))
+          .finally(() => setLoadingRepos(false));
+      } else {
+        setLoadingRepos(false);
+      }
+    } else {
+      setLoadingRepos(false);
+    }
+  }, []);
 
   // Step 2: Analysis
   const [analysis, setAnalysis] = useState(null);
@@ -134,11 +154,11 @@ export default function DeploymentWizard() {
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
                   i < step ? 'bg-mint-500 text-royal-900' :
                   i === step ? 'bg-mint-500/20 text-mint-400 ring-2 ring-mint-500' :
-                  'bg-royal-800 text-slate-500'
+                  'bg-royal-800 text-blue-200/60'
                 }`}>
                   {i < step ? <CheckCircle2 className="w-5 h-5" /> : <s.icon className="w-4 h-4" />}
                 </div>
-                <span className={`hidden sm:block text-xs font-medium ${i <= step ? 'text-white' : 'text-slate-500'}`}>
+                <span className={`hidden sm:block text-xs font-medium ${i <= step ? 'text-white' : 'text-blue-200/60'}`}>
                   {s.label}
                 </span>
                 {i < STEPS.length - 1 && <ChevronRight className="w-4 h-4 text-slate-600 mx-1 hidden sm:block" />}
@@ -160,12 +180,41 @@ export default function DeploymentWizard() {
               <motion.div key="s0" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="flat-panel p-8">
                 <h2 className="text-2xl font-bold text-white mb-1">Enter Repository</h2>
-                <p className="text-slate-400 text-sm mb-8">Paste a GitHub, GitLab, or Bitbucket repository URL.</p>
+                <p className="text-blue-200 text-sm mb-8">Paste a GitHub, GitLab, or Bitbucket repository URL.</p>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1.5">Repository URL</label>
                     <input type="text" value={repoUrl} onChange={e => setRepoUrl(e.target.value)}
-                      className={inputClass + " font-mono"} placeholder="https://github.com/user/repo.git" />
+                      className={inputClass + " font-mono mb-4"} placeholder="https://github.com/user/repo.git" />
+                    
+                    {loadingRepos ? (
+                      <div className="flex items-center gap-2 text-blue-200/60 text-sm">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Fetching GitHub repos...
+                      </div>
+                    ) : githubRepos.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-blue-200 mb-1.5 flex items-center gap-2">
+                          <FaGithub className="w-4 h-4" /> Or select a connected repository
+                        </label>
+                        <div className="max-h-48 overflow-y-auto rounded-xl border border-royal-800 bg-royal-900/30">
+                          {githubRepos.map(r => (
+                            <button key={r.id} onClick={() => { setRepoUrl(r.clone_url); setBranch(r.default_branch); setName(r.name); }}
+                              className={`w-full text-left px-4 py-3 border-b border-royal-800 last:border-0 hover:bg-white/5 backdrop-blur-md transition-colors flex items-center justify-between
+                              ${repoUrl === r.clone_url ? 'bg-mint-500/10 text-mint-400' : 'text-blue-200'}
+                            `}>
+                              <div className="flex items-center gap-2">
+                                <FaGithub className="w-4 h-4" />
+                                <span className="font-medium text-sm">{r.full_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {r.private && <Lock className="w-3 h-3 text-blue-200/60" />}
+                                <span className="text-xs text-blue-200/60 bg-royal-900 px-2 py-0.5 rounded-full">{r.default_branch}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -192,7 +241,7 @@ export default function DeploymentWizard() {
               <motion.div key="s1" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="flat-panel p-8">
                 <h2 className="text-2xl font-bold text-white mb-1">Repository Analysis</h2>
-                <p className="text-slate-400 text-sm mb-6">We scanned your repository and found the following.</p>
+                <p className="text-blue-200 text-sm mb-6">We scanned your repository and found the following.</p>
                 {/* Suggestions */}
                 <div className="space-y-2 mb-6">
                   {analysis.suggestions.map((s, i) => (
@@ -223,7 +272,7 @@ export default function DeploymentWizard() {
                             deployFolder === f.path ? 'border-mint-500 bg-mint-500/10 text-mint-400' : 'border-royal-800 bg-royal-900/50 text-slate-300 hover:border-slate-600'
                           }`}>
                           <FolderTree className="w-4 h-4 inline mr-2" />{f.path}/
-                          {f.hasPackageJson && <span className="ml-2 text-xs text-slate-500">(package.json)</span>}
+                          {f.hasPackageJson && <span className="ml-2 text-xs text-blue-200/60">(package.json)</span>}
                         </button>
                       ))}
                       <button onClick={() => setDeployFolder('.')}
@@ -238,8 +287,8 @@ export default function DeploymentWizard() {
                 {/* Folder Tree Preview */}
                 {analysis.folderTree.length > 0 && (
                   <details className="mb-6">
-                    <summary className="text-sm text-slate-400 cursor-pointer hover:text-slate-300">View folder tree</summary>
-                    <div className="mt-2 bg-royal-900 rounded-xl p-4 font-mono text-xs text-slate-400 max-h-48 overflow-y-auto">
+                    <summary className="text-sm text-blue-200 cursor-pointer hover:text-slate-300">View folder tree</summary>
+                    <div className="mt-2 bg-royal-900 rounded-xl p-4 font-mono text-xs text-blue-200 max-h-48 overflow-y-auto">
                       {renderTree(analysis.folderTree, 0)}
                     </div>
                   </details>
@@ -260,7 +309,7 @@ export default function DeploymentWizard() {
               <motion.div key="s2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="flat-panel p-8">
                 <h2 className="text-2xl font-bold text-white mb-1">Configure Deployment</h2>
-                <p className="text-slate-400 text-sm mb-6">Select project type and build settings.</p>
+                <p className="text-blue-200 text-sm mb-6">Select project type and build settings.</p>
                 {/* Project Type */}
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-slate-300 mb-2">Project Type</label>
@@ -279,29 +328,29 @@ export default function DeploymentWizard() {
                 <div className="space-y-4 mb-6">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Install Command</label>
+                      <label className="block text-xs font-medium text-blue-200 mb-1">Install Command</label>
                       <input type="text" value={buildConfig.installCommand} onChange={e => setBuildConfig({...buildConfig, installCommand: e.target.value})}
                         className={inputClass} placeholder="npm install" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Build Command</label>
+                      <label className="block text-xs font-medium text-blue-200 mb-1">Build Command</label>
                       <input type="text" value={buildConfig.buildCommand} onChange={e => setBuildConfig({...buildConfig, buildCommand: e.target.value})}
                         className={inputClass} placeholder="npm run build" />
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Start Command</label>
+                      <label className="block text-xs font-medium text-blue-200 mb-1">Start Command</label>
                       <input type="text" value={buildConfig.startCommand} onChange={e => setBuildConfig({...buildConfig, startCommand: e.target.value})}
                         className={inputClass} placeholder="npm start" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Exposed Port</label>
+                      <label className="block text-xs font-medium text-blue-200 mb-1">Exposed Port</label>
                       <input type="number" value={buildConfig.exposedPort} onChange={e => setBuildConfig({...buildConfig, exposedPort: parseInt(e.target.value) || 3000})}
                         className={inputClass} placeholder="3000" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Node Version</label>
+                      <label className="block text-xs font-medium text-blue-200 mb-1">Node Version</label>
                       <select value={buildConfig.nodeVersion} onChange={e => setBuildConfig({...buildConfig, nodeVersion: e.target.value})}
                         className={inputClass + " cursor-pointer"}>
                         <option value="20">Node 20</option><option value="18">Node 18</option><option value="16">Node 16</option>
@@ -309,7 +358,7 @@ export default function DeploymentWizard() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Environment</label>
+                    <label className="block text-xs font-medium text-blue-200 mb-1">Environment</label>
                     <select value={environment} onChange={e => setEnvironment(e.target.value)} className={inputClass + " cursor-pointer"}>
                       <option value="development">Development</option><option value="staging">Staging</option><option value="production">Production</option>
                     </select>
@@ -338,13 +387,13 @@ export default function DeploymentWizard() {
               <motion.div key="s3" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="flat-panel p-8">
                 <h2 className="text-2xl font-bold text-white mb-1">Environment Variables</h2>
-                <p className="text-slate-400 text-sm mb-6">Add key-value pairs injected at container runtime.</p>
+                <p className="text-blue-200 text-sm mb-6">Add key-value pairs injected at container runtime.</p>
                 <div className="space-y-3 mb-6">
                   {envVars.map((ev, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input type="text" value={ev.key} onChange={e => updateEnvVar(i, 'key', e.target.value)}
                         className={inputClass + " flex-1 font-mono"} placeholder="KEY" />
-                      <span className="text-slate-500">=</span>
+                      <span className="text-blue-200/60">=</span>
                       <input type="text" value={ev.value} onChange={e => updateEnvVar(i, 'value', e.target.value)}
                         className={inputClass + " flex-1 font-mono"} placeholder="value" />
                       <button onClick={() => removeEnvVar(i)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-4 h-4" /></button>
@@ -373,7 +422,7 @@ export default function DeploymentWizard() {
                 <h2 className="text-2xl font-bold text-white mb-1">
                   {useCustomDockerfile ? 'Deploy Confirmation' : 'Auto-Generated Dockerfile'}
                 </h2>
-                <p className="text-slate-400 text-sm mb-6">
+                <p className="text-blue-200 text-sm mb-6">
                   {useCustomDockerfile ? 'Using the Dockerfile from your repository.' : 'Review and edit the generated Dockerfile before deploying.'}
                 </p>
                 {!useCustomDockerfile && (
@@ -391,12 +440,12 @@ export default function DeploymentWizard() {
                 )}
                 {/* Summary */}
                 <div className="bg-royal-900 rounded-xl p-4 mb-6 space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Service</span><span className="text-white font-medium">{name}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Branch</span><span className="text-white font-mono">{branch}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Framework</span><span className="text-white">{projectType || 'Auto'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Deploy Folder</span><span className="text-white font-mono">{deployFolder}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Port</span><span className="text-white">{buildConfig.exposedPort}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Env Vars</span><span className="text-white">{envVars.filter(e=>e.key).length}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Service</span><span className="text-white font-medium">{name}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Branch</span><span className="text-white font-mono">{branch}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Framework</span><span className="text-white">{projectType || 'Auto'}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Deploy Folder</span><span className="text-white font-mono">{deployFolder}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Port</span><span className="text-white">{buildConfig.exposedPort}</span></div>
+                  <div className="flex justify-between"><span className="text-blue-200">Env Vars</span><span className="text-white">{envVars.filter(e=>e.key).length}</span></div>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => setStep(3)} className="flex-1 py-3 rounded-full border border-royal-800 text-slate-300 hover:bg-royal-900/50 transition-all text-sm font-medium">
@@ -418,7 +467,7 @@ export default function DeploymentWizard() {
                   <CheckCircle2 className="w-20 h-20 text-mint-500 mx-auto mb-4" />
                 </motion.div>
                 <h2 className="text-2xl font-bold text-white mb-2">Deployment Triggered!</h2>
-                <p className="text-slate-400 text-sm mb-8">Your service is being built and deployed. Track progress on the deployments page.</p>
+                <p className="text-blue-200 text-sm mb-8">Your service is being built and deployed. Track progress on the deployments page.</p>
                 <div className="bg-royal-900 rounded-xl p-4 mb-8 font-mono text-sm text-mint-400">
                   {deployResult.name} — {deployResult.status}
                 </div>
@@ -443,7 +492,7 @@ export default function DeploymentWizard() {
 function renderTree(nodes, depth) {
   return nodes.map((node, i) => (
     <div key={node.path} style={{ paddingLeft: depth * 16 }}>
-      <span className={node.type === 'directory' ? 'text-cyan-400' : 'text-slate-500'}>
+      <span className={node.type === 'directory' ? 'text-cyan-400' : 'text-blue-200/60'}>
         {node.type === 'directory' ? '📁 ' : '📄 '}{node.name}
       </span>
       {node.children && renderTree(node.children, depth + 1)}

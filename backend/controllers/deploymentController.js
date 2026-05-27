@@ -9,6 +9,9 @@ const { analyzeRepository, getAIContext } = require('../services/repoAnalyzer');
 const { generateDockerfile } = require('../services/dockerfileGenerator');
 const { cleanupRepo } = require('../services/cleanup');
 const { forceCheckDeployment } = require('../services/pollingService');
+const githubService = require('../services/githubService');
+const User = require('../models/User');
+const jenkinsService = require('../services/jenkinsService');
 
 const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '//./pipe/docker_engine' });
 const REPOS_DIR = path.join(__dirname, '..', 'repos');
@@ -192,6 +195,23 @@ exports.createDeployment = async (req, res) => {
     runDeploymentPipeline(deployment._id, workspaceId);
 
     res.status(201).json(deployment);
+
+    // After responding, try to auto-create webhook if github is connected
+    (async () => {
+      try {
+        const user = await User.findById(req.user.id);
+        if (user && user.githubAccessToken && repoUrl.includes('github.com')) {
+          const match = repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+          if (match) {
+            await githubService.createWebhook(match[1], match[2], user.githubAccessToken);
+            console.log(`[Webhook] Auto-created for ${repoUrl}`);
+          }
+        }
+      } catch (err) {
+        console.error(`[Webhook] Auto-create failed:`, err.message);
+      }
+    })();
+
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
@@ -798,5 +818,89 @@ exports.updateRuntime = async (req, res) => {
   } catch (err) {
     console.error('[Update Runtime API Error]', err.message);
     res.status(500).json({ msg: 'Server error updating runtime' });
+  }
+};
+
+// ============================================================
+// API: Handle GitHub Webhook (Push Events)
+// ============================================================
+exports.handleGitHubWebhook = async (req, res) => {
+  try {
+    // 1. Verify signature
+    if (!githubService.verifyWebhookSignature(req)) {
+      return res.status(401).json({ msg: 'Invalid webhook signature' });
+    }
+
+    const event = req.headers['x-github-event'];
+    
+    // Only care about push events
+    if (event !== 'push') {
+      return res.status(200).json({ msg: 'Ignored non-push event' });
+    }
+
+    const { repository, ref, head_commit } = req.body;
+    if (!repository || !ref || !head_commit) {
+      return res.status(200).json({ msg: 'Incomplete push data' });
+    }
+
+    const repoUrl = repository.clone_url || repository.html_url;
+    // e.g. "refs/heads/main" -> "main"
+    const branch = ref.replace('refs/heads/', '');
+    const commitSha = head_commit.id;
+
+    console.log(`[Webhook] Push detected on ${repoUrl} branch ${branch}`);
+
+    // 2. Find all deployments tracking this repo & branch with autoDeployEnabled
+    const deployments = await Deployment.find({
+      repoUrl: { $regex: new RegExp(repository.name, 'i') },
+      branch: branch,
+      autoDeployEnabled: true
+    });
+
+    if (deployments.length === 0) {
+      return res.status(200).json({ msg: 'No active auto-deployments for this repo/branch' });
+    }
+
+    // 3. Trigger deployments
+    for (const dep of deployments) {
+      if (dep.lastCommitSha === commitSha) {
+        console.log(`[Webhook] Skipping ${dep.name}, already on commit ${commitSha}`);
+        continue;
+      }
+
+      console.log(`[Webhook] Triggering redeploy for ${dep.name}`);
+      
+      // Update DB
+      dep.lastCommitSha = commitSha;
+      dep.lastCheckedAt = new Date();
+      await dep.save();
+      
+      await Deployment.findByIdAndUpdate(dep._id, {
+        $push: {
+          logs: {
+            message: `GitHub Webhook: Push detected (${commitSha.slice(0, 7)}: ${head_commit.message})`,
+            type: 'info',
+            timestamp: new Date()
+          }
+        }
+      });
+
+      // Trigger Jenkins (or internal redeploy)
+      await jenkinsService.triggerBuild({
+        deploymentId: dep._id.toString(),
+        repoUrl: dep.repoUrl,
+        branch: dep.branch,
+        projectType: dep.projectType || 'auto',
+        deployFolder: dep.deployFolder || '.',
+        port: dep.port || 3000
+      });
+      console.log(`[Webhook] Jenkins Triggered for ${dep.name}`);
+    }
+
+    res.status(200).json({ msg: `Webhook processed, triggered ${deployments.length} deployments` });
+
+  } catch (err) {
+    console.error('[Webhook Error]', err.message);
+    res.status(500).json({ msg: 'Webhook processing error' });
   }
 };

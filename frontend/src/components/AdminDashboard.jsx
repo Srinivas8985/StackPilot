@@ -141,7 +141,7 @@ export default function AdminDashboard() {
           </div>
           <div>
             <h1 className="text-3xl font-extrabold text-white tracking-tight">Admin Portal</h1>
-            <p className="text-slate-400 text-sm">Platform management & monitoring</p>
+            <p className="text-blue-200 text-sm">Platform management & monitoring</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -161,7 +161,7 @@ export default function AdminDashboard() {
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
               activeTab === tab.key
                 ? 'bg-mint-500/10 text-mint-400 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-royal-800'
+                : 'text-blue-200/80 hover:text-white hover:bg-white/10'
             }`}
           >
             {tab.icon} {tab.label}
@@ -181,11 +181,11 @@ export default function AdminDashboard() {
                 { label: 'Failed', value: stats?.deployments?.failed || 0, icon: <AlertCircle className="w-6 h-6 text-red-400" />, sub: 'Needs attention' },
                 { label: 'Total Users', value: stats?.users?.total || 0, icon: <Users className="w-6 h-6 text-purple-400" />, sub: 'Registered accounts' },
               ].map((m, i) => (
-                <div key={i} className="bg-royal-800/50 border border-royal-700 p-6 rounded-2xl hover:border-royal-600 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-royal-900 flex items-center justify-center border border-royal-800 mb-4">{m.icon}</div>
-                  <div className="text-3xl font-bold text-white mb-1">{m.value}</div>
-                  <div className="text-sm text-slate-400 font-medium">{m.label}</div>
-                  <div className="text-xs text-slate-500 mt-3 pt-3 border-t border-royal-800/50">{m.sub}</div>
+                <div key={i} className="bg-white/5 border border-white/10 p-6 rounded-2xl hover:border-white/20 transition-colors backdrop-blur-md">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/5 mb-4 shadow-sm">{m.icon}</div>
+                  <div className="text-3xl font-bold text-white mb-1 drop-shadow-md">{m.value}</div>
+                  <div className="text-sm text-blue-100 font-medium">{m.label}</div>
+                  <div className="text-xs text-blue-200/60 mt-3 pt-3 border-t border-white/10">{m.sub}</div>
                 </div>
               ))}
             </div>
@@ -193,8 +193,8 @@ export default function AdminDashboard() {
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Timeline Chart */}
-              <div className="lg:col-span-2 bg-royal-800/30 border border-royal-700 rounded-2xl p-6">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-mint-500" /> Deployment Timeline</h3>
+              <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Activity className="w-5 h-5 text-mint-500" /> Deployment Timeline</h3>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats?.timeline || []}>
@@ -210,8 +210,8 @@ export default function AdminDashboard() {
               </div>
 
               {/* Status Pie */}
-              <div className="bg-royal-800/30 border border-royal-700 rounded-2xl p-6">
-                <h3 className="text-lg font-bold mb-4">Status Distribution</h3>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+                <h3 className="text-lg font-bold mb-4 text-white">Status Distribution</h3>
                 {pieData.length > 0 ? (
                   <div className="h-56 flex items-center justify-center">
                     <ResponsiveContainer width="100%" height="100%">
@@ -228,8 +228,8 @@ export default function AdminDashboard() {
                 )}
                 <div className="flex justify-center gap-4 mt-2">
                   {pieData.map(d => (
-                    <div key={d.name} className="flex items-center gap-1.5 text-xs text-slate-400">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                    <div key={d.name} className="flex items-center gap-1.5 text-xs text-blue-200">
+                      <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: d.color }} />
                       {d.name} ({d.value})
                     </div>
                   ))}
@@ -239,8 +239,8 @@ export default function AdminDashboard() {
 
             {/* Docker & Jenkins Info */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-royal-800/30 border border-royal-700 rounded-2xl p-6">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Database className="w-5 h-5 text-cyan-400" /> Docker Resources</h3>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Database className="w-5 h-5 text-cyan-400" /> Docker Resources</h3>
                 <div className="space-y-3">
                   {[
                     { label: 'Running Containers', value: stats?.docker?.containers },
@@ -248,16 +248,16 @@ export default function AdminDashboard() {
                     { label: 'Memory', value: stats?.docker?.memoryUsage },
                     { label: 'CPUs', value: stats?.docker?.cpuUsage },
                   ].map((item, i) => (
-                    <div key={i} className="flex justify-between items-center py-2 border-b border-royal-800/50 last:border-0">
-                      <span className="text-sm text-slate-400">{item.label}</span>
+                    <div key={i} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+                      <span className="text-sm text-blue-200">{item.label}</span>
                       <span className="text-sm font-mono text-white">{item.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-royal-800/30 border border-royal-700 rounded-2xl p-6">
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Terminal className="w-5 h-5 text-purple-400" /> Quick Actions</h3>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Terminal className="w-5 h-5 text-purple-400" /> Quick Actions</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: 'Force Poll', action: '/admin/polling/trigger', icon: <RefreshCw className="w-4 h-4" /> },
@@ -268,7 +268,7 @@ export default function AdminDashboard() {
                       key={btn.label}
                       onClick={() => triggerAction(btn.action, btn.label)}
                       disabled={!!actionLoading}
-                      className="flex items-center gap-2 bg-royal-900 hover:bg-royal-800 border border-royal-700 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                      className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
                     >
                       {actionLoading === btn.label ? <Loader2 className="w-4 h-4 animate-spin" /> : btn.icon}
                       {btn.label}

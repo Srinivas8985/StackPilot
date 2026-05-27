@@ -5,6 +5,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const deploymentsRoutes = require('./routes/deployments');
 const adminRoutes = require('./routes/admin');
+const githubRoutes = require('./routes/github');
 const { startCleanupScheduler } = require('./services/cleanup');
 const { startPolling } = require('./services/pollingService');
 
@@ -12,6 +13,9 @@ const { startPolling } = require('./services/pollingService');
 const client = require('prom-client');
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
+
+const session = require('express-session');
+const passport = require('./config/passport');
 
 const httpRequestDurationSeconds = new client.Histogram({
   name: 'http_request_duration_seconds',
@@ -44,6 +48,14 @@ app.use((req, res, next) => {
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'stackpilot_session_super_secret',
+  resave: false,
+  saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Metrics routes (supports both formats for high compatibility)
 app.get('/metrics', async (req, res) => {
   res.setHeader('Content-Type', register.contentType);
@@ -58,6 +70,7 @@ app.get('/api/metrics', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/deployments', deploymentsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/github', githubRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
@@ -73,8 +86,8 @@ mongoose.connect(MONGO_URI)
       console.log(`Server running on port ${PORT}`);
       // Start the cleanup scheduler for temp repos and stale containers
       startCleanupScheduler();
-      // Start GitHub commit polling service
-      startPolling();
+      // Start GitHub commit polling service (TURNED OFF for Webhooks)
+      // startPolling();
     });
   })
   .catch((err) => {
