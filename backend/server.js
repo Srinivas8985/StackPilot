@@ -46,7 +46,16 @@ app.use((req, res, next) => {
 
 // Middleware
 app.set('trust proxy', 1);
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow any origin, reflecting it back to the client
+    // This is necessary because the EC2 frontend URL will differ from localhost
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+}));
 app.use(express.json({ limit: '5mb' }));
 
 app.use(session({
