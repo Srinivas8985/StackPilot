@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api';
+import api, { API_URL } from '../api';
 import { Eye, EyeOff, Terminal, Rocket, Loader2 } from 'lucide-react';
 import { FaGithub } from "react-icons/fa";
 

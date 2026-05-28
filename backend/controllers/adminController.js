@@ -6,7 +6,7 @@ const { isJenkinsAvailable, getRecentBuilds } = require('../services/jenkinsServ
 const { startPolling, stopPolling, restartPolling, pollOnce } = require('../services/pollingService');
 const { runCleanupCycle } = require('../services/cleanup');
 
-const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '//./pipe/docker_engine' });
+const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
 
 // ============================================================
 // GET /api/admin/stats — Platform-wide statistics
@@ -212,8 +212,8 @@ exports.adminRedeploy = async (req, res) => {
 
     // Try removing old container
     try {
-      const { execSync } = require('child_process');
-      execSync(`docker rm -f sp-${deployment._id}`, { stdio: 'ignore' });
+      const { execFileSync } = require('child_process');
+      execFileSync('docker', ['rm', '-f', `sp-${deployment._id}`], { stdio: 'ignore' });
     } catch (_) {}
 
     const { triggerInternalRedeploy } = require('./deploymentController');
@@ -235,14 +235,14 @@ exports.adminDelete = async (req, res) => {
     const deployment = await Deployment.findById(req.params.id);
     if (!deployment) return res.status(404).json({ msg: 'Deployment not found' });
 
-    const { execSync } = require('child_process');
-    try { execSync(`docker rm -f sp-${deployment._id}`, { stdio: 'ignore' }); } catch (_) {}
+    const { execFileSync } = require('child_process');
+    try { execFileSync('docker', ['rm', '-f', `sp-${deployment._id}`], { stdio: 'ignore' }); } catch (_) {}
     if (deployment.containerId) {
-      try { execSync(`docker rm -f ${deployment.containerId}`, { stdio: 'ignore' }); } catch (_) {}
+      try { execFileSync('docker', ['rm', '-f', deployment.containerId], { stdio: 'ignore' }); } catch (_) {}
     }
     try {
       const imageName = `stackpilot-${deployment._id}`.toLowerCase();
-      execSync(`docker rmi -f ${imageName}`, { stdio: 'ignore' });
+      execFileSync('docker', ['rmi', '-f', imageName], { stdio: 'ignore' });
     } catch (_) {}
 
     await Deployment.findByIdAndDelete(deployment._id);

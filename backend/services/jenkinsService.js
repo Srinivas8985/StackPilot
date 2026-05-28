@@ -192,5 +192,6 @@ module.exports = {
   getBuild,
   getBuildConsole,
   isJenkinsAvailable,
-  getRecentBuilds
+  getRecentBuilds,
+  getJenkinsUrl: () => JENKINS_URL
 };
