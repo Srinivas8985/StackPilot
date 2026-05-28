@@ -136,7 +136,10 @@ export default function Login() {
           </div>
 
           <button
-            onClick={() => window.location.href = 'http://localhost:5000/api/auth/github'}
+            onClick={() => {
+              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+              window.location.href = `${apiUrl}/auth/github`;
+            }}
             className="w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-white font-semibold py-3.5 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 group"
           >
             <FaGithub className="w-5 h-5 group-hover:text-mint-400 transition-colors" />
