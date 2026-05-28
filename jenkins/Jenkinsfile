@@ -35,7 +35,7 @@ pipeline {
             steps {
                 script {
                     echo "=== Cloning ${params.REPO_URL} (branch: ${params.BRANCH}) ==="
-                    bat "git clone --depth 1 --branch ${params.BRANCH} ${params.REPO_URL} ${env.WORKSPACE_DIR}"
+                    sh "git clone --depth 1 --branch ${params.BRANCH} ${params.REPO_URL} ${env.WORKSPACE_DIR}"
                 }
             }
         }
@@ -52,7 +52,7 @@ pipeline {
                         try {
                             // Use Windows certutil to decode base64 to avoid Jenkins Groovy Sandbox security errors
                             writeFile file: "${buildContext}/Dockerfile.b64", text: params.DOCKERFILE_B64
-                            bat "certutil -decode ${buildContext}/Dockerfile.b64 ${buildContext}/Dockerfile"
+                            sh "base64 -d ${buildContext}/Dockerfile.b64 > ${buildContext}/Dockerfile"
                             echo "=== Successfully wrote StackPilot generated Dockerfile ==="
                         } catch (Exception e) {
                             echo "WARNING: Failed to decode DOCKERFILE_B64 parameter"
@@ -65,7 +65,7 @@ pipeline {
                         error("No Dockerfile found. Ensure StackPilot generates it before triggering Jenkins.")
                     }
 
-                    bat "docker build -t ${params.IMAGE_NAME} ${buildContext}"
+                    sh "docker build -t ${params.IMAGE_NAME} ${buildContext}"
                 }
             }
         }
@@ -75,7 +75,7 @@ pipeline {
                 script {
                     echo "=== Stopping old container: ${params.CONTAINER_NAME} ==="
                     catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                        bat "docker rm -f ${params.CONTAINER_NAME}"
+                        sh "docker rm -f ${params.CONTAINER_NAME}"
                     }
                 }
             }
@@ -85,14 +85,14 @@ pipeline {
             steps {
                 script {
                     echo "=== Starting new container: ${params.CONTAINER_NAME} on port ${params.PORT} ==="
-                    bat """
-                        docker run -d ^
-                            --name ${params.CONTAINER_NAME} ^
-                            -p ${params.PORT}:${params.PORT} ^
-                            -e PORT=${params.PORT} ^
-                            --memory=512m ^
-                            --cpu-shares=256 ^
-                            --restart=unless-stopped ^
+                    sh """
+                        docker run -d \\
+                            --name ${params.CONTAINER_NAME} \\
+                            -p ${params.PORT}:${params.PORT} \\
+                            -e PORT=${params.PORT} \\
+                            --memory=512m \\
+                            --cpu-shares=256 \\
+                            --restart=unless-stopped \\
                             ${params.IMAGE_NAME}
                     """
                     echo "=== Container deployed successfully ==="
@@ -105,10 +105,10 @@ pipeline {
             steps {
                 script {
                     echo "=== Syncing runtime status with StackPilot ==="
-                    bat """
-                        curl -X POST http://localhost:5000/api/deployments/update-runtime ^
-                        -H "Content-Type: application/json" ^
-                        -d "{\\"deploymentId\\":\\"${params.DEPLOYMENT_ID}\\",\\"containerName\\":\\"${params.CONTAINER_NAME}\\",\\"imageName\\":\\"${params.IMAGE_NAME}\\",\\"status\\":\\"running\\",\\"port\\":${params.PORT},\\"buildStatus\\":\\"success\\"}"
+                    sh """
+                        curl -X POST http://localhost:5000/api/deployments/update-runtime \\
+                        -H "Content-Type: application/json" \\
+                        -d '{"deploymentId":"${params.DEPLOYMENT_ID}","containerName":"${params.CONTAINER_NAME}","imageName":"${params.IMAGE_NAME}","status":"running","port":${params.PORT},"buildStatus":"success"}'
                     """
                 }
             }
@@ -137,7 +137,7 @@ pipeline {
             script {
                 // Try to clean up on failure
                 catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                    bat "docker rm -f ${params.CONTAINER_NAME}"
+                    sh "docker rm -f ${params.CONTAINER_NAME}"
                 }
             }
         }

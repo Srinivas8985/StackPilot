@@ -3,8 +3,8 @@ const path = require('path');
 const Docker = require('dockerode');
 const Deployment = require('../models/Deployment');
 
-const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '//./pipe/docker_engine' });
-const REPOS_DIR = path.join(__dirname, '..', 'repos');
+const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
+const REPOS_DIR = '/tmp/stackpilot/repos';
 
 /**
  * Delete the cloned repository directory for a given deployment.

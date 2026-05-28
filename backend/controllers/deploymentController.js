@@ -1,6 +1,7 @@
-const { execSync, exec } = require('child_process');
+const { execSync, execFileSync, exec, execFile } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
 const path = require('path');
 const fs = require('fs');
 const Docker = require('dockerode');
@@ -13,8 +14,8 @@ const githubService = require('../services/githubService');
 const User = require('../models/User');
 const jenkinsService = require('../services/jenkinsService');
 
-const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '//./pipe/docker_engine' });
-const REPOS_DIR = path.join(__dirname, '..', 'repos');
+const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
+const REPOS_DIR = '/tmp/stackpilot/repos';
 const REPOS_TEMP_DIR = path.join(REPOS_DIR, 'temp');
 
 // Port pool management
@@ -75,7 +76,7 @@ exports.analyzeRepo = async (req, res) => {
       try { await fs.promises.rm(cloneDir, { recursive: true, force: true }); } catch (_) {}
     }
 
-    execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} "${cloneDir}"`, {
+    execFileSync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, cloneDir], {
       timeout: 60000
     });
 
@@ -111,7 +112,7 @@ exports.generateDockerfileEndpoint = async (req, res) => {
     
     // Only clone if it doesn't already exist (i.e. not using a passed workspace)
     if (!fs.existsSync(cloneDir)) {
-      execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} "${cloneDir}"`, {
+      execFileSync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, cloneDir], {
         timeout: 180000
       });
     }
@@ -245,7 +246,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
         await pushLog(deploymentId, 'Workspace linked successfully', 'success');
       } else {
         await pushLog(deploymentId, `Cloning repository: ${deployment.repoUrl}`, 'info');
-        await execPromise(`git clone --depth 1 --branch ${deployment.branch} ${deployment.repoUrl} "${cloneDir}"`, {
+        await execFilePromise('git', ['clone', '--depth', '1', '--branch', deployment.branch, deployment.repoUrl, cloneDir], {
           timeout: 180000
         });
         await pushLog(deploymentId, 'Repository cloned successfully', 'success');
@@ -477,7 +478,7 @@ exports.startDeployment = async (req, res) => {
 
     // Check if image exists locally
     try {
-      execSync(`docker image inspect ${imageName}`, { stdio: 'ignore' });
+      execFileSync('docker', ['image', 'inspect', imageName], { stdio: 'ignore' });
     } catch (_) {
       return res.status(400).json({ msg: 'No Docker image found. Please Redeploy instead.' });
     }
@@ -485,7 +486,7 @@ exports.startDeployment = async (req, res) => {
     // Force-remove any existing leftover container by name
     const containerName = `sp-${deployment._id}`;
     try {
-      await execPromise(`docker rm -f ${containerName}`);
+      await execFilePromise('docker', ['rm', '-f', containerName]);
     } catch (_) {}
 
     deployment.status = 'deploying';
