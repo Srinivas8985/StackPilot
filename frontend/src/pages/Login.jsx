@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api';
+import api, { API_URL } from '../api';
 import { Eye, EyeOff, Terminal, Rocket, Loader2 } from 'lucide-react';
 import { FaGithub } from "react-icons/fa";
 
@@ -136,7 +136,7 @@ export default function Login() {
           </div>
 
           <button
-            onClick={() => window.location.href = 'http://localhost:5000/api/auth/github'}
+            onClick={() => window.location.href = `${API_URL}/auth/github`}
             className="w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-white font-semibold py-3.5 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 group"
           >
             <FaGithub className="w-5 h-5 group-hover:text-mint-400 transition-colors" />
