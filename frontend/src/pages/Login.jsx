@@ -137,8 +137,10 @@ export default function Login() {
 
           <button
             onClick={() => {
-              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-              window.location.href = `${apiUrl}/auth/github`;
+              const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+              // Clean the URL to ensure it works whether /api was included in Vercel or not
+              const baseUrl = envUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+              window.location.href = `${baseUrl}/api/auth/github`;
             }}
             className="w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-white font-semibold py-3.5 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3 group"
           >
