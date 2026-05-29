@@ -798,8 +798,9 @@ exports.updateRuntime = async (req, res) => {
     if (imageName) deployment.imageId = imageName;
     if (status) deployment.status = status;
     if (port) {
+      const host = process.env.HOST || 'localhost';
       deployment.port = port;
-      deployment.deploymentUrl = `http://localhost:${port}`;
+      deployment.deploymentUrl = `http://${host}:${port}`;
     }
     if (lastCommitSha) deployment.lastCommitSha = lastCommitSha;
     if (buildStatus) deployment.jenkinsBuildStatus = buildStatus;

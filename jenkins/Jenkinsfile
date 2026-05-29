@@ -106,7 +106,7 @@ pipeline {
                 script {
                     echo "=== Syncing runtime status with StackPilot ==="
                     sh """
-                        curl -X POST http://localhost:5000/api/deployments/update-runtime \\
+                        curl -X POST http://172.17.0.1:5000/api/deployments/update-runtime \\
                         -H "Content-Type: application/json" \\
                         -d '{"deploymentId":"${params.DEPLOYMENT_ID}","containerName":"${params.CONTAINER_NAME}","imageName":"${params.IMAGE_NAME}","status":"running","port":${params.PORT},"buildStatus":"success"}'
                     """
