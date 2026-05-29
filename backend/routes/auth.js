@@ -54,7 +54,8 @@ router.get('/github/callback',
       (err, token) => {
         if (err) throw err;
         // Redirect back to frontend with the token
-        res.redirect(`http://localhost:5173/auth-callback?token=${token}`);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        res.redirect(`${frontendUrl}/auth-callback?token=${token}`);
       }
     );
   }
