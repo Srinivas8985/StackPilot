@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import api from '../api';
@@ -6,23 +6,27 @@ import api from '../api';
 export default function AuthCallback() {
   const navigate = useNavigate();
   const location = useLocation();
+  const hasFetched = useRef(false);
 
   useEffect(() => {
+    if (hasFetched.current) return;
+    
     const params = new URLSearchParams(location.search);
     const token = params.get('token');
 
     if (token) {
+      hasFetched.current = true;
       localStorage.setItem('token', token);
       // Fetch user profile immediately
       api.get('/auth/me').then(res => {
         localStorage.setItem('user', JSON.stringify(res.data));
-        navigate('/dashboard');
+        navigate('/dashboard', { replace: true });
       }).catch(err => {
         console.error(err);
-        navigate('/login');
+        navigate('/login', { replace: true });
       });
     } else {
-      navigate('/login');
+      navigate('/login', { replace: true });
     }
   }, [location, navigate]);
 

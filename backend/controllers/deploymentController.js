@@ -73,7 +73,7 @@ exports.analyzeRepo = async (req, res) => {
   try {
     if (!fs.existsSync(REPOS_TEMP_DIR)) fs.mkdirSync(REPOS_TEMP_DIR, { recursive: true });
     if (fs.existsSync(cloneDir)) {
-      try { await fs.promises.rm(cloneDir, { recursive: true, force: true }); } catch (_) {}
+      try { await fs.promises.rm(cloneDir, { recursive: true, force: true }); } catch (_) { }
     }
 
     execFileSync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, cloneDir], {
@@ -86,7 +86,7 @@ exports.analyzeRepo = async (req, res) => {
     res.json({ analysis, tempId });
   } catch (err) {
     // Cleanup on failure
-    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(()=>{}); } catch (_) {}
+    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(() => { }); } catch (_) { }
     console.error('Analyze error:', err.message);
     res.status(400).json({ msg: `Failed to clone/analyze: ${err.message.substring(0, 200)}` });
   }
@@ -109,7 +109,7 @@ exports.generateDockerfileEndpoint = async (req, res) => {
 
   try {
     if (!fs.existsSync(REPOS_TEMP_DIR)) fs.mkdirSync(REPOS_TEMP_DIR, { recursive: true });
-    
+
     // Only clone if it doesn't already exist (i.e. not using a passed workspace)
     if (!fs.existsSync(cloneDir)) {
       execFileSync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, cloneDir], {
@@ -130,7 +130,7 @@ exports.generateDockerfileEndpoint = async (req, res) => {
     // DO NOT clean up. The pipeline will reuse or clean it up.
     res.json({ dockerfile, workspaceId: tempId });
   } catch (err) {
-    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(()=>{}); } catch (_) {}
+    try { if (fs.existsSync(cloneDir)) fs.promises.rm(cloneDir, { recursive: true, force: true }).catch(() => { }); } catch (_) { }
     console.error('Dockerfile generation error:', err.message);
     res.status(500).json({ msg: `Failed to generate Dockerfile: ${err.message.substring(0, 200)}` });
   }
@@ -238,7 +238,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
       if (fs.existsSync(cloneDir)) {
         await fs.promises.rm(cloneDir, { recursive: true, force: true });
       }
-      
+
       const tempWorkspace = workspaceId ? path.join(REPOS_TEMP_DIR, workspaceId) : null;
       if (tempWorkspace && fs.existsSync(tempWorkspace)) {
         await pushLog(deploymentId, `Linking existing analyzed workspace`, 'info');
@@ -270,7 +270,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
     // ---------- STEP 3: Ensure Dockerfile ----------
     let currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'generating' });
     if (!currentDep) { cleanupRepo(deploymentId); return; }
-    
+
     const dockerfilePath = path.join(buildContextDir, 'Dockerfile');
 
     if (deployment.useCustomDockerfile && fs.existsSync(dockerfilePath)) {
@@ -308,7 +308,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
     // ---------- STEP 4: Build Docker image ----------
     currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'building' });
     if (!currentDep) { cleanupRepo(deploymentId); return; }
-    
+
     await pushLog(deploymentId, 'Building Docker image…', 'info');
 
     const imageName = `stackpilot-${deployment._id}`.toLowerCase();
@@ -325,16 +325,16 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
 
     // ---------- STEP 5: Start container ----------
     currentDep = await Deployment.findByIdAndUpdate(deploymentId, { status: 'deploying' });
-    if (!currentDep) { 
+    if (!currentDep) {
       // It was deleted during build. Clean up the built image so it doesn't leak.
-      try { await execPromise(`docker rmi -f ${imageName}`); } catch (_) {}
-      cleanupRepo(deploymentId); 
-      return; 
+      try { await execPromise(`docker rmi -f ${imageName}`); } catch (_) { }
+      cleanupRepo(deploymentId);
+      return;
     }
     await pushLog(deploymentId, 'Starting container…', 'info');
 
     const exposedPort = deployment.buildConfig?.exposedPort || 3000;
-    
+
     // Assign and reserve port immediately in DB to prevent race conditions
     const port = await getAvailablePort();
     await Deployment.findByIdAndUpdate(deploymentId, { port });
@@ -439,7 +439,7 @@ exports.stopDeployment = async (req, res) => {
     for (const cid of idsToTry) {
       try {
         const container = docker.getContainer(cid);
-        await container.stop().catch(() => {});
+        await container.stop().catch(() => { });
         await container.remove({ force: true });
         await pushLog(deployment._id, 'Container stopped and removed', 'info');
         break;
@@ -487,7 +487,7 @@ exports.startDeployment = async (req, res) => {
     const containerName = `sp-${deployment._id}`;
     try {
       await execFilePromise('docker', ['rm', '-f', containerName]);
-    } catch (_) {}
+    } catch (_) { }
 
     deployment.status = 'deploying';
     await deployment.save();
@@ -552,7 +552,7 @@ exports.redeployDeployment = async (req, res) => {
       if (deployment.containerId) {
         await execPromise(`docker rm -f ${deployment.containerId}`);
       }
-      
+
       const imageName = `stackpilot-${deployment._id}`.toLowerCase();
       await execPromise(`docker rmi -f ${imageName}`);
       await pushLog(deployment._id, 'Old container and image removed', 'info');
@@ -585,11 +585,11 @@ exports.deleteDeployment = async (req, res) => {
     // Cleanup container
     try {
       await execPromise(`docker rm -f sp-${deployment._id}`);
-    } catch (_) {}
+    } catch (_) { }
     if (deployment.containerId) {
       try {
         await execPromise(`docker rm -f ${deployment.containerId}`);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Cleanup repo
@@ -599,7 +599,7 @@ exports.deleteDeployment = async (req, res) => {
     try {
       const imageName = `stackpilot-${deployment._id}`.toLowerCase();
       await execPromise(`docker rmi -f ${imageName}`);
-    } catch (_) {}
+    } catch (_) { }
 
     await Deployment.findByIdAndDelete(deployment._id);
     res.json({ msg: 'Deployment deleted' });
@@ -617,7 +617,7 @@ exports.getDeploymentLogs = async (req, res) => {
     if (deployment.user.toString() !== req.user.id) {
       return res.status(403).json({ msg: 'Not authorized' });
     }
-    
+
     // Copy pipeline logs
     let allLogs = [...deployment.logs];
 
@@ -631,12 +631,12 @@ exports.getDeploymentLogs = async (req, res) => {
           timestamps: true,
           tail: 50
         });
-        
+
         // Parse Docker multiplexed log stream (simplistic parsing for strings)
         // Docker attaches an 8-byte header to each line. We can clean it up for basic string viewing.
         const logString = logStream.toString('utf8');
         const logLines = logString.split('\n').filter(Boolean);
-        
+
         if (logLines.length > 0) {
           allLogs.push({ message: '--- CONTAINER RUNTIME LOGS ---', type: 'info', timestamp: new Date() });
           for (const line of logLines) {
@@ -752,7 +752,7 @@ exports.triggerInternalRedeploy = function (deploymentId) {
         }
         const imageName = `stackpilot-${deployment._id}`.toLowerCase();
         await execPromise(`docker rmi -f ${imageName}`);
-      } catch (_) {}
+      } catch (_) { }
 
       deployment.status = 'queued';
       deployment.containerId = null;
@@ -798,13 +798,17 @@ exports.updateRuntime = async (req, res) => {
     if (imageName) deployment.imageId = imageName;
     if (status) deployment.status = status;
     if (port) {
-      const host = process.env.HOST || 'localhost';
+      let hostStr = 'localhost';
+      if (process.env.PUBLIC_API_URL) {
+        try { hostStr = new URL(process.env.PUBLIC_API_URL).hostname; } catch(e) {}
+      }
+      const host = process.env.HOST || hostStr;
       deployment.port = port;
       deployment.deploymentUrl = `http://${host}:${port}`;
     }
     if (lastCommitSha) deployment.lastCommitSha = lastCommitSha;
     if (buildStatus) deployment.jenkinsBuildStatus = buildStatus;
-    
+
     // Create redeploy history entry
     deployment.redeployCount = (deployment.redeployCount || 0) + 1;
     deployment.redeployHistory.push({
@@ -834,7 +838,7 @@ exports.handleGitHubWebhook = async (req, res) => {
     }
 
     const event = req.headers['x-github-event'];
-    
+
     // Only care about push events
     if (event !== 'push') {
       return res.status(200).json({ msg: 'Ignored non-push event' });
@@ -871,12 +875,12 @@ exports.handleGitHubWebhook = async (req, res) => {
       }
 
       console.log(`[Webhook] Triggering redeploy for ${dep.name}`);
-      
+
       // Update DB
       dep.lastCommitSha = commitSha;
       dep.lastCheckedAt = new Date();
       await dep.save();
-      
+
       await Deployment.findByIdAndUpdate(dep._id, {
         $push: {
           logs: {
