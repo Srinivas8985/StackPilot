@@ -364,7 +364,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
       });
       await container.start();
 
-      const HOST = process.env.HOST || 'localhost';
+      const HOST = process.env.DEPLOYMENT_URL || 'localhost';
       const deploymentUrl = `http://${HOST}:${port}`;
 
       await Deployment.findByIdAndUpdate(deploymentId, {
