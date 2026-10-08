@@ -158,9 +158,9 @@ PROJECT DETAILS:
   } else if (projectType === 'nextjs') {
     prompt += `\nFRAMEWORK HINTS:
 - This is a Next.js project
-- Use standalone output mode if configured
 - Use multi-stage build
-- Copy .next/standalone and .next/static
+- Copy .next, public, package.json, and node_modules from the builder stage
+- Use "npm start" (which usually runs "next start") in the final stage
 - CRITICAL: Do NOT use --omit=dev or --production during the builder stage's npm install, as devDependencies are required to build Next.js!\n`;
   } else if (projectType === 'flask') {
     prompt += `\nFRAMEWORK HINTS:
