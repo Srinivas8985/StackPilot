@@ -283,6 +283,8 @@ function getAIContext(repoDir, deployFolder = '.') {
 
   context.hasDockerfile = fs.existsSync(path.join(targetDir, 'Dockerfile'));
 
+  context.projectType = detectFramework(targetDir, context.packageJson, context.requirementsTxt);
+
   return context;
 }
 

@@ -43,6 +43,9 @@ async function getAvailableModels() {
  * @returns {Promise<string>} generated Dockerfile content
  */
 async function generateDockerfile({ projectType, aiContext, buildConfig = {}, exposedPort = 3000 }) {
+  if (aiContext && aiContext.projectType) {
+    projectType = aiContext.projectType;
+  }
   const prompt = buildPrompt({ projectType, aiContext, buildConfig, exposedPort });
   
   let models;
@@ -103,6 +106,7 @@ RULES:
 - IMPORTANT: For CMD or ENTRYPOINT, if using the array/exec form, separate the arguments properly (e.g. CMD ["npm", "start"] NOT CMD ["npm start"]). Alternatively, use the shell form (e.g. CMD npm start).
 - CRITICAL: Always use "npm install" (or "npm install --omit=dev" for backend) instead of "npm ci". Many user repositories do not commit package-lock.json, so "npm ci" will cause the build to crash!
 - CRITICAL: The Docker build context is strictly the folder shown in the structure below. DO NOT prepend parent folder names (like "frontend/" or "server/") in your COPY commands. Act as if the provided structure is the absolute root of the repository.
+- CRITICAL: If the provided package.json does NOT have a "build" script in its "scripts" section, you MUST NOT run "npm run build".
 
 PROJECT DETAILS:
 - Project type: ${projectType || 'auto-detect'}

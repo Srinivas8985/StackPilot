@@ -297,7 +297,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
         await pushLog(deploymentId, `AI generation failed, using fallback: ${aiErr.message}`, 'warning');
         const { generateFallbackDockerfile } = require('../services/dockerfileGenerator');
         const fallback = generateFallbackDockerfile({
-          projectType: deployment.projectType || 'express',
+          projectType: aiContext.projectType || deployment.projectType || 'express',
           buildConfig: deployment.buildConfig || {},
           exposedPort: deployment.buildConfig?.exposedPort || 3000
         });
