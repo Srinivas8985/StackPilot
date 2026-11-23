@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const deploymentsRoutes = require('./routes/deployments');
+const infrastructureRoutes = require('./routes/infrastructure');
 const adminRoutes = require('./routes/admin');
 const githubRoutes = require('./routes/github');
 const { startCleanupScheduler } = require('./services/cleanup');
@@ -79,6 +80,7 @@ app.get('/api/metrics', async (req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/deployments', deploymentsRoutes);
+app.use('/api/infrastructure', infrastructureRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/github', githubRoutes);
 

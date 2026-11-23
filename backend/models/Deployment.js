@@ -47,6 +47,18 @@ const deploymentSchema = new mongoose.Schema({
     default: 'queued'
   },
 
+  // === Deployment Mode & Infrastructure ===
+  deploymentMode: {
+    type: String,
+    enum: ['shared', 'dedicated'],
+    default: 'shared'
+  },
+  infrastructure: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Infrastructure',
+    default: null
+  },
+
   // === Advanced Configuration ===
   projectType: {
     type: String,
@@ -142,14 +154,31 @@ const deploymentSchema = new mongoose.Schema({
   },
   redeployHistory: [redeployHistorySchema],
 
-  // === Jenkins ===
+  // === Jenkins CI/CD & Remote Deployment ===
   jenkinsBuildNumber: {
     type: Number,
+    default: null
+  },
+  jenkinsBuildUrl: {
+    type: String,
     default: null
   },
   jenkinsBuildStatus: {
     type: String,
     enum: ['idle', 'queued', 'building', 'success', 'failed', null],
+    default: null
+  },
+  targetHost: {
+    type: String,
+    default: null
+  },
+  remoteDeploymentStatus: {
+    type: String,
+    enum: ['idle', 'building', 'transferring', 'deploying', 'running', 'failed', null],
+    default: null
+  },
+  remoteDeployedAt: {
+    type: Date,
     default: null
   }
 }, { timestamps: true });

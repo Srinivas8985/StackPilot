@@ -1,0 +1,11 @@
+---
+# Hiera common configuration data for StackPilot Puppet module
+stackpilot::monitoring_port: 5666
+stackpilot::nrpe_allowed_hosts: '127.0.0.1,::1'
+stackpilot::docker_log_max_size: '10m'
+stackpilot::docker_log_max_files: '3'
+stackpilot::managed_dirs:
+  - '/etc/stackpilot'
+  - '/var/log/stackpilot'
+  - '/opt/stackpilot'
+

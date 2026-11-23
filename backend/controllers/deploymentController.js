@@ -6,6 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const Docker = require('dockerode');
 const Deployment = require('../models/Deployment');
+const Infrastructure = require('../models/Infrastructure');
+const { provisionDedicatedInfrastructure, destroyDedicatedInfrastructure } = require('../services/terraformService');
 const { analyzeRepository, getAIContext } = require('../services/repoAnalyzer');
 const { generateDockerfile } = require('../services/dockerfileGenerator');
 const { cleanupRepo } = require('../services/cleanup');
@@ -144,7 +146,8 @@ exports.createDeployment = async (req, res) => {
   const {
     name, repoUrl, branch = 'main', environment = 'development',
     deployFolder = '.', envVars = [],
-    buildConfig = {}, generatedDockerfile, useCustomDockerfile = false, workspaceId
+    buildConfig = {}, generatedDockerfile, useCustomDockerfile = false, workspaceId,
+    deploymentMode = 'shared', infrastructureConfig = {}
   } = req.body;
 
   let { projectType } = req.body;
@@ -178,6 +181,7 @@ exports.createDeployment = async (req, res) => {
       environment,
       projectType,
       deployFolder,
+      deploymentMode: deploymentMode === 'dedicated' ? 'dedicated' : 'shared',
       envVars: sanitizedEnvVars,
       buildConfig: {
         installCommand: buildConfig.installCommand || null,
@@ -192,8 +196,37 @@ exports.createDeployment = async (req, res) => {
     });
     await deployment.save();
 
-    // Start async deployment pipeline
-    runDeploymentPipeline(deployment._id, workspaceId);
+    // Dedicated vs Shared Workflow
+    if (deploymentMode === 'dedicated') {
+      const stateIdentifier = `deploy-${deployment._id}-${Date.now()}`;
+      const infra = new Infrastructure({
+        user: req.user.id,
+        deployment: deployment._id,
+        stateIdentifier,
+        awsRegion: infrastructureConfig.awsRegion || 'us-east-1',
+        instanceType: infrastructureConfig.instanceType || 't3.micro',
+        amiOs: infrastructureConfig.amiOs || 'ubuntu',
+        sshAllowedCidr: infrastructureConfig.sshAllowedCidr || '0.0.0.0/0',
+        appAllowedCidr: infrastructureConfig.appAllowedCidr || '0.0.0.0/0',
+        sshKeyName: infrastructureConfig.sshKeyName || '',
+        applicationPort: infrastructureConfig.applicationPort || buildConfig.exposedPort || 3000,
+        status: 'PENDING'
+      });
+      await infra.save();
+
+      deployment.infrastructure = infra._id;
+      await deployment.save();
+
+      // Trigger asynchronous Terraform provisioning
+      setImmediate(() => {
+        provisionDedicatedInfrastructure(infra._id).catch(err => {
+          console.error(`[Deployment] Dedicated provisioning error:`, err);
+        });
+      });
+    } else {
+      // Shared deployment mode: run existing container pipeline
+      runDeploymentPipeline(deployment._id, workspaceId);
+    }
 
     res.status(201).json(deployment);
 
@@ -402,6 +435,7 @@ async function runDeploymentPipeline(deploymentId, workspaceId) {
 exports.getDeployments = async (req, res) => {
   try {
     const deployments = await Deployment.find({ user: req.user.id })
+      .populate('infrastructure')
       .sort({ createdAt: -1 });
     res.json(deployments);
   } catch (err) {
@@ -413,7 +447,8 @@ exports.getDeployments = async (req, res) => {
 // GET /api/deployments/:id
 exports.getDeployment = async (req, res) => {
   try {
-    const deployment = await Deployment.findById(req.params.id);
+    const deployment = await Deployment.findById(req.params.id)
+      .populate('infrastructure');
     if (!deployment) return res.status(404).json({ msg: 'Deployment not found' });
     if (deployment.user.toString() !== req.user.id) {
       return res.status(403).json({ msg: 'Not authorized' });
@@ -546,7 +581,13 @@ exports.redeployDeployment = async (req, res) => {
       return res.status(403).json({ msg: 'Not authorized' });
     }
 
-    // Force-remove existing container and image
+    // If this is a dedicated EC2 deployment, trigger dedicated Jenkins remote pipeline
+    if (deployment.deploymentMode === 'dedicated' || deployment.infrastructure) {
+      const result = await jenkinsService.triggerDedicatedDeployment(deployment._id, req.user.id);
+      return res.json(result.deployment || deployment);
+    }
+
+    // Shared deployment workflow: Force-remove existing container and image
     try {
       await execPromise(`docker rm -f sp-${deployment._id}`);
       if (deployment.containerId) {
@@ -569,7 +610,7 @@ exports.redeployDeployment = async (req, res) => {
     res.json(deployment);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ msg: 'Server error' });
+    res.status(500).json({ msg: err.message || 'Server error' });
   }
 };
 
@@ -600,6 +641,18 @@ exports.deleteDeployment = async (req, res) => {
       const imageName = `stackpilot-${deployment._id}`.toLowerCase();
       await execPromise(`docker rmi -f ${imageName}`);
     } catch (_) { }
+
+    // If dedicated deployment, destroy provisioned AWS resources
+    if (deployment.infrastructure) {
+      try {
+        const infra = await Infrastructure.findById(deployment.infrastructure);
+        if (infra && infra.status !== 'DESTROYED') {
+          destroyDedicatedInfrastructure(infra._id).catch(err => {
+            console.error(`[DeleteDeployment] Error destroying dedicated infra:`, err.message);
+          });
+        }
+      } catch (_) { }
+    }
 
     await Deployment.findByIdAndDelete(deployment._id);
     res.json({ msg: 'Deployment deleted' });
@@ -781,7 +834,9 @@ exports.updateRuntime = async (req, res) => {
       port,
       lastCommitSha,
       buildStatus,
-      redeployedAt
+      redeployedAt,
+      deploymentMode,
+      targetHost
     } = req.body;
 
     if (!deploymentId) {
@@ -797,15 +852,37 @@ exports.updateRuntime = async (req, res) => {
     if (containerName) deployment.containerId = containerName;
     if (imageName) deployment.imageId = imageName;
     if (status) deployment.status = status;
-    if (port) {
-      let hostStr = 'localhost';
-      if (process.env.PUBLIC_API_URL) {
-        try { hostStr = new URL(process.env.PUBLIC_API_URL).hostname; } catch(e) {}
+
+    const isDedicated = deploymentMode === 'dedicated' || deployment.deploymentMode === 'dedicated';
+
+    if (isDedicated) {
+      if (targetHost) deployment.targetHost = targetHost;
+      if (buildStatus === 'success' || status === 'running') {
+        deployment.remoteDeploymentStatus = 'running';
+        deployment.remoteDeployedAt = redeployedAt || new Date();
+      } else if (buildStatus === 'failed' || status === 'failed') {
+        deployment.remoteDeploymentStatus = 'failed';
       }
-      const host = process.env.HOST || hostStr;
-      deployment.port = port;
-      deployment.deploymentUrl = `http://${host}:${port}`;
+
+      const activeHost = targetHost || deployment.targetHost;
+      const activePort = port || deployment.port || 3000;
+      if (activeHost) {
+        deployment.deploymentUrl = `http://${activeHost}:${activePort}`;
+      }
+      if (port) deployment.port = port;
+    } else {
+      // Shared local host deployment
+      if (port) {
+        let hostStr = 'localhost';
+        if (process.env.PUBLIC_API_URL) {
+          try { hostStr = new URL(process.env.PUBLIC_API_URL).hostname; } catch(e) {}
+        }
+        const host = process.env.HOST || hostStr;
+        deployment.port = port;
+        deployment.deploymentUrl = `http://${host}:${port}`;
+      }
     }
+
     if (lastCommitSha) deployment.lastCommitSha = lastCommitSha;
     if (buildStatus) deployment.jenkinsBuildStatus = buildStatus;
 
@@ -813,7 +890,7 @@ exports.updateRuntime = async (req, res) => {
     deployment.redeployCount = (deployment.redeployCount || 0) + 1;
     deployment.redeployHistory.push({
       triggeredAt: redeployedAt || new Date(),
-      trigger: 'jenkins',
+      trigger: isDedicated ? 'jenkins-dedicated' : 'jenkins',
       commitSha: lastCommitSha || deployment.lastCommitSha,
       status: buildStatus === 'success' ? 'success' : 'failed'
     });
@@ -824,6 +901,19 @@ exports.updateRuntime = async (req, res) => {
   } catch (err) {
     console.error('[Update Runtime API Error]', err.message);
     res.status(500).json({ msg: 'Server error updating runtime' });
+  }
+};
+
+// ============================================================
+// API: Trigger Remote Jenkins Deployment to Dedicated EC2
+// ============================================================
+exports.triggerRemoteDeploy = async (req, res) => {
+  try {
+    const result = await jenkinsService.triggerDedicatedDeployment(req.params.id, req.user.id);
+    res.json(result);
+  } catch (err) {
+    console.error('[Trigger Remote Deploy Error]', err.message);
+    res.status(400).json({ msg: err.message });
   }
 };
 

@@ -1,0 +1,96 @@
+---
+# Official Docker Engine installation and configuration tasks
+
+# ============================================================
+# 1. UBUNTU / DEBIAN OFFICIAL DOCKER INSTALLATION
+# ============================================================
+- name: Ensure keyrings directory exists (Debian/Ubuntu)
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  when: ansible_os_family == "Debian"
+
+- name: Download official Docker GPG key (Debian/Ubuntu)
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+    force: false
+  when: ansible_os_family == "Debian"
+
+- name: Add official Docker repository to sources.list.d (Debian/Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+  when: ansible_os_family == "Debian"
+
+- name: Install Docker CE and Compose plugin (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: "{{ docker_packages_ubuntu }}"
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+# ============================================================
+# 2. AMAZON LINUX / REDHAT OFFICIAL DOCKER INSTALLATION
+# ============================================================
+- name: Install Docker (Amazon Linux / RedHat)
+  ansible.builtin.dnf:
+    name: "{{ docker_packages_amazon_linux }}"
+    state: present
+  when: ansible_os_family == "RedHat"
+  failed_when: false
+
+# ============================================================
+# 3. DOCKER SERVICE MANAGEMENT
+# ============================================================
+- name: Ensure Docker service is enabled and started
+  ansible.builtin.service:
+    name: docker
+    state: "{{ docker_service_state }}"
+    enabled: "{{ docker_service_enabled }}"
+
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Add target users to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_group_users }}"
+  failed_when: false
+
+# ============================================================
+# 4. VERIFICATION
+# ============================================================
+- name: Verify Docker CLI version
+  ansible.builtin.command: docker --version
+  register: docker_version_output
+  changed_when: false
+
+- name: Verify Docker daemon operational status
+  ansible.builtin.command: docker info
+  register: docker_info_output
+  changed_when: false
+
+- name: Emit StackPilot readiness & configuration metadata
+  ansible.builtin.copy:
+    dest: "{{ stackpilot_configured_marker }}"
+    content: |
+      {
+        "status": "configured",
+        "deployment_id": "{{ deployment_id | default('unassigned') }}",
+        "infrastructure_id": "{{ infrastructure_id | default('unassigned') }}",
+        "configured_by": "StackPilot Ansible Orchestrator",
+        "configured_at": "{{ ansible_date_time.iso8601 }}",
+        "docker_version": "{{ docker_version_output.stdout | default('installed') }}",
+        "ansible_version": "{{ ansible_version.full | default('unknown') }}",
+        "os_distribution": "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+      }
+    mode: '0644'
+

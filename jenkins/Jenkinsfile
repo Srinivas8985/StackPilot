@@ -2,15 +2,20 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'DEPLOYMENT_ID',  description: 'StackPilot Deployment ID')
-        string(name: 'REPO_URL',       description: 'GitHub repository URL')
-        string(name: 'BRANCH',         defaultValue: 'main', description: 'Branch to clone')
-        string(name: 'PROJECT_TYPE',   defaultValue: 'auto', description: 'Project type')
-        string(name: 'ROOT_FOLDER',    defaultValue: '.', description: 'Root folder for build context')
-        string(name: 'PORT',           defaultValue: '3000', description: 'Container exposed port')
-        string(name: 'CONTAINER_NAME', description: 'Docker container name')
-        string(name: 'IMAGE_NAME',     description: 'Docker image name')
-        string(name: 'DOCKERFILE_B64', defaultValue: '', description: 'Base64 encoded Dockerfile content')
+        string(name: 'DEPLOYMENT_ID',      description: 'StackPilot Deployment ID')
+        string(name: 'REPO_URL',           description: 'GitHub repository URL')
+        string(name: 'BRANCH',             defaultValue: 'main', description: 'Branch to clone')
+        string(name: 'PROJECT_TYPE',       defaultValue: 'auto', description: 'Project type')
+        string(name: 'ROOT_FOLDER',        defaultValue: '.', description: 'Root folder for build context')
+        string(name: 'PORT',               defaultValue: '3000', description: 'Container exposed port')
+        string(name: 'CONTAINER_NAME',     description: 'Docker container name')
+        string(name: 'IMAGE_NAME',         description: 'Docker image name')
+        string(name: 'DOCKERFILE_B64',     defaultValue: '', description: 'Base64 encoded Dockerfile content')
+        string(name: 'DEPLOYMENT_MODE',    defaultValue: 'shared', description: 'Deployment mode: shared or dedicated')
+        string(name: 'TARGET_HOST',        defaultValue: '', description: 'Target host IP for dedicated deployment')
+        string(name: 'SSH_USER',           defaultValue: 'ubuntu', description: 'SSH username for dedicated host')
+        string(name: 'SSH_CREDENTIAL_ID',  defaultValue: 'stackpilot-dedicated-key', description: 'Jenkins SSH credential ID')
+        string(name: 'ENV_VARS_BASE64',    defaultValue: '', description: 'Base64 encoded environment variables')
     }
 
     environment {
@@ -50,12 +55,11 @@ pipeline {
                     // Write Dockerfile if provided via base64 parameter
                     if (params.DOCKERFILE_B64 != '') {
                         try {
-                            // Use Windows certutil to decode base64 to avoid Jenkins Groovy Sandbox security errors
                             writeFile file: "${buildContext}/Dockerfile.b64", text: params.DOCKERFILE_B64
                             sh "base64 -d ${buildContext}/Dockerfile.b64 > ${buildContext}/Dockerfile"
                             echo "=== Successfully wrote StackPilot generated Dockerfile ==="
                         } catch (Exception e) {
-                            echo "WARNING: Failed to decode DOCKERFILE_B64 parameter"
+                            echo "WARNING: Failed to decode DOCKERFILE_B64 parameter: ${e.message}"
                         }
                     }
 
@@ -70,33 +74,113 @@ pipeline {
             }
         }
 
-        stage('Stop Old Container') {
-            steps {
-                script {
-                    echo "=== Stopping old container: ${params.CONTAINER_NAME} ==="
-                    catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                        sh "docker rm -f ${params.CONTAINER_NAME}"
+        // ====================================================================
+        // SHARED DEPLOYMENT: Local Container on StackPilot EC2 Host
+        // ====================================================================
+        stage('Deploy Container (Shared Host)') {
+            when {
+                expression { return params.DEPLOYMENT_MODE != 'dedicated' }
+            }
+            stages {
+                stage('Stop Old Local Container') {
+                    steps {
+                        script {
+                            echo "=== Stopping old shared container: ${params.CONTAINER_NAME} ==="
+                            catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                                sh "docker rm -f ${params.CONTAINER_NAME}"
+                            }
+                        }
+                    }
+                }
+
+                stage('Start New Local Container') {
+                    steps {
+                        script {
+                            echo "=== Starting new shared container: ${params.CONTAINER_NAME} on port ${params.PORT} ==="
+                            sh """
+                                docker run -d \\
+                                    --name ${params.CONTAINER_NAME} \\
+                                    -p ${params.PORT}:${params.PORT} \\
+                                    -e PORT=${params.PORT} \\
+                                    --memory=512m \\
+                                    --cpu-shares=256 \\
+                                    --restart=unless-stopped \\
+                                    ${params.IMAGE_NAME}
+                            """
+                            echo "=== Shared container deployed successfully ==="
+                            echo "=== Accessible at http://localhost:${params.PORT} ==="
+                        }
                     }
                 }
             }
         }
 
-        stage('Deploy New Container') {
+        // ====================================================================
+        // DEDICATED DEPLOYMENT: Remote EC2 Container via SSH & Image Streaming
+        // ====================================================================
+        stage('Deploy Container (Dedicated Host)') {
+            when {
+                expression { return params.DEPLOYMENT_MODE == 'dedicated' }
+            }
             steps {
                 script {
-                    echo "=== Starting new container: ${params.CONTAINER_NAME} on port ${params.PORT} ==="
-                    sh """
-                        docker run -d \\
-                            --name ${params.CONTAINER_NAME} \\
-                            -p ${params.PORT}:${params.PORT} \\
-                            -e PORT=${params.PORT} \\
-                            --memory=512m \\
-                            --cpu-shares=256 \\
-                            --restart=unless-stopped \\
-                            ${params.IMAGE_NAME}
-                    """
-                    echo "=== Container deployed successfully ==="
-                    echo "=== Accessible at http://localhost:${params.PORT} ==="
+                    echo "=== Starting Dedicated Remote Deployment ==="
+                    if (!params.TARGET_HOST || params.TARGET_HOST.trim() == '') {
+                        error("TARGET_HOST is required for dedicated deployment mode.")
+                    }
+
+                    def target = params.TARGET_HOST.trim()
+                    if (target == '127.0.0.1' || target == 'localhost' || target == '0.0.0.0') {
+                        error("Security Error: TARGET_HOST cannot be a loopback or localhost address.")
+                    }
+
+                    def credId = params.SSH_CREDENTIAL_ID ?: 'stackpilot-dedicated-key'
+                    def user = params.SSH_USER ?: 'ubuntu'
+
+                    echo "=== Dedicated Target: ${user}@${target} (Credential: ${credId}) ==="
+
+                    withCredentials([sshUserPrivateKey(credentialsId: credId, keyFileVariable: 'SSH_KEY_PATH', passphraseVariable: '', usernameVariable: 'SSH_USER_CRED')]) {
+                        def effectiveUser = params.SSH_USER ?: env.SSH_USER_CRED ?: 'ubuntu'
+                        def remoteTarget = "${effectiveUser}@${target}"
+                        def sshCmd = "ssh -i ${env.SSH_KEY_PATH} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
+
+                        // Step 1: Stream Docker image to remote node without external registry
+                        echo "=== Step 1: Transferring Docker Image to Dedicated EC2 (${remoteTarget}) ==="
+                        sh """
+                            echo "Streaming compressed image ${params.IMAGE_NAME} over encrypted SSH..."
+                            docker save ${params.IMAGE_NAME} | gzip -1 | ${sshCmd} ${remoteTarget} "gunzip | docker load"
+                            echo "Docker image transferred and loaded successfully on dedicated host."
+                        """
+
+                        // Step 2: Stop and remove old container on remote node
+                        echo "=== Step 2: Stopping Previous Container on Dedicated Host ==="
+                        sh """
+                            ${sshCmd} ${remoteTarget} "docker stop ${params.CONTAINER_NAME} || true; docker rm -f ${params.CONTAINER_NAME} || true"
+                        """
+
+                        // Step 3: Start new container on remote node
+                        echo "=== Step 3: Starting New Container on Dedicated Host (Port ${params.PORT}) ==="
+                        sh """
+                            ${sshCmd} ${remoteTarget} "docker run -d \\
+                                --name ${params.CONTAINER_NAME} \\
+                                -p ${params.PORT}:${params.PORT} \\
+                                -e PORT=${params.PORT} \\
+                                --restart=unless-stopped \\
+                                ${params.IMAGE_NAME}"
+                        """
+
+                        // Step 4: Verify remote container health
+                        echo "=== Step 4: Verifying Remote Container Status ==="
+                        sh """
+                            RUNNING_ID=\$(${sshCmd} ${remoteTarget} "docker ps --filter name=${params.CONTAINER_NAME} --filter status=running -q")
+                            if [ -z "\$RUNNING_ID" ]; then
+                                echo "ERROR: Dedicated container failed to stay running on ${remoteTarget}"
+                                ${sshCmd} ${remoteTarget} "docker logs --tail 50 ${params.CONTAINER_NAME}" || true
+                                exit 1
+                            fi
+                            echo "SUCCESS: Container is running on dedicated host: \$RUNNING_ID"
+                        """
+                    }
                 }
             }
         }
@@ -104,12 +188,26 @@ pipeline {
         stage('Update StackPilot Backend') {
             steps {
                 script {
-                    echo "=== Syncing runtime status with StackPilot ==="
-                    sh """
-                        curl -X POST http://172.17.0.1:5000/api/deployments/update-runtime \\
-                        -H "Content-Type: application/json" \\
-                        -d '{"deploymentId":"${params.DEPLOYMENT_ID}","containerName":"${params.CONTAINER_NAME}","imageName":"${params.IMAGE_NAME}","status":"running","port":${params.PORT},"buildStatus":"success"}'
-                    """
+                    echo "=== Syncing runtime status with StackPilot Backend ==="
+                    def targetHostParam = params.DEPLOYMENT_MODE == 'dedicated' ? params.TARGET_HOST : ''
+                    def postData = """{
+                        "deploymentId": "${params.DEPLOYMENT_ID}",
+                        "containerName": "${params.CONTAINER_NAME}",
+                        "imageName": "${params.IMAGE_NAME}",
+                        "status": "running",
+                        "port": ${params.PORT},
+                        "buildStatus": "success",
+                        "deploymentMode": "${params.DEPLOYMENT_MODE}",
+                        "targetHost": "${targetHostParam}"
+                    }"""
+
+                    catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                        sh """
+                            curl -s -X POST http://172.17.0.1:5000/api/deployments/update-runtime \\
+                            -H "Content-Type: application/json" \\
+                            -d '${postData}' || true
+                        """
+                    }
                 }
             }
         }
@@ -117,7 +215,7 @@ pipeline {
         stage('Cleanup') {
             steps {
                 script {
-                    echo "=== Cleaning up temporary files ==="
+                    echo "=== Cleaning up temporary workspace files ==="
                     if (fileExists(env.WORKSPACE_DIR)) {
                         dir(env.WORKSPACE_DIR) {
                             deleteDir()
@@ -130,19 +228,27 @@ pipeline {
 
     post {
         success {
-            echo "=== Pipeline completed successfully for deployment ${params.DEPLOYMENT_ID} ==="
+            echo "=== Pipeline completed successfully for deployment ${params.DEPLOYMENT_ID} (${params.DEPLOYMENT_MODE}) ==="
         }
         failure {
-            echo "=== Pipeline FAILED for deployment ${params.DEPLOYMENT_ID} ==="
+            echo "=== Pipeline FAILED for deployment ${params.DEPLOYMENT_ID} (${params.DEPLOYMENT_MODE}) ==="
             script {
-                // Try to clean up on failure
-                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                    sh "docker rm -f ${params.CONTAINER_NAME}"
+                if (params.DEPLOYMENT_MODE != 'dedicated') {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                        sh "docker rm -f ${params.CONTAINER_NAME}"
+                    }
+                }
+                // Notify backend of failure
+                catchError(buildResult: 'FAILURE', stageResult: 'UNSTABLE') {
+                    sh """
+                        curl -s -X POST http://172.17.0.1:5000/api/deployments/update-runtime \\
+                        -H "Content-Type: application/json" \\
+                        -d '{"deploymentId":"${params.DEPLOYMENT_ID}","status":"failed","buildStatus":"failed","deploymentMode":"${params.DEPLOYMENT_MODE}"}' || true
+                    """
                 }
             }
         }
         always {
-            // Cleanup workspace
             script {
                 if (fileExists(env.WORKSPACE_DIR)) {
                     dir(env.WORKSPACE_DIR) {

@@ -1,0 +1,38 @@
+---
+# Global group variables for StackPilot dedicated host provisioning
+
+# Base directories
+stackpilot_base_dir: "/opt/stackpilot"
+stackpilot_app_dir: "/opt/stackpilot/app"
+stackpilot_logs_dir: "/opt/stackpilot/logs"
+stackpilot_metadata_dir: "/etc/stackpilot"
+
+# Read marker file paths
+stackpilot_configured_marker: "/etc/stackpilot/configured.json"
+stackpilot_ready_marker: "/etc/stackpilot-ready"
+
+# System packages
+system_packages_ubuntu:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - git
+  - jq
+  - htop
+  - ufw
+  - tar
+  - unzip
+
+system_packages_amazon_linux:
+  - git
+  - jq
+  - curl
+  - htop
+  - tar
+  - unzip
+
+# Target deployment users to add to docker group
+docker_group_users:
+  - "{{ ansible_user | default('ubuntu') }}"
+

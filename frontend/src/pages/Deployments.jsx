@@ -4,11 +4,13 @@ import { Link } from 'react-router-dom';
 import api from '../api';
 
 import DeploymentLogs from '../components/DeploymentLogs';
+import InfrastructureModal from '../components/InfrastructureModal';
 import {
   Rocket, Plus, Play, Square, RotateCcw, Trash2,
   GitBranch, Globe, Clock, CheckCircle2, AlertCircle,
   Loader2, ExternalLink, Terminal, Server, ChevronDown,
-  Search, Filter, XCircle, Zap, RefreshCw, GitCommit
+  Search, Filter, XCircle, Zap, RefreshCw, GitCommit,
+  Cloud, Shield
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -27,6 +29,7 @@ export default function Deployments() {
   const [loading, setLoading] = useState(true);
 
   const [logsId, setLogsId] = useState(null);
+  const [selectedInfraDep, setSelectedInfraDep] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -225,8 +228,28 @@ export default function Deployments() {
                       {/* Top Row */}
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <h3 className="text-lg font-semibold text-white truncate">{dep.name}</h3>
+                            {dep.deploymentMode === 'dedicated' ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                <Cloud className="w-3 h-3" /> Dedicated {dep.targetHost ? `(${dep.targetHost})` : 'EC2'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                                <Server className="w-3 h-3" /> Shared
+                              </span>
+                            )}
+                            {dep.remoteDeploymentStatus && (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                dep.remoteDeploymentStatus === 'running'
+                                  ? 'bg-mint-500/10 text-mint-400 border border-mint-500/20'
+                                  : dep.remoteDeploymentStatus === 'failed'
+                                  ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                              }`}>
+                                <Rocket className="w-3 h-3" /> Remote: {dep.remoteDeploymentStatus}
+                              </span>
+                            )}
                             <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${status.bg} ${status.color}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${status.dot} ${dep.status === 'building' || dep.status === 'cloning' || dep.status === 'deploying' ? 'animate-pulse' : ''}`} />
                               {status.label}
@@ -400,6 +423,16 @@ export default function Deployments() {
                           </button>
                         )}
 
+                        {(dep.deploymentMode === 'dedicated' || dep.infrastructure) && (
+                          <button
+                            onClick={() => setSelectedInfraDep(dep)}
+                            className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1.5 rounded-lg hover:bg-cyan-500/10 transition-colors border border-cyan-500/20"
+                          >
+                            <Cloud className="w-3.5 h-3.5" />
+                            Infra Console
+                          </button>
+                        )}
+
                         <button
                           onClick={() => handleDelete(dep._id)}
                           disabled={actionLoading === dep._id}
@@ -429,6 +462,14 @@ export default function Deployments() {
             </div>
           )}
         </div>
+
+        {/* Dedicated Infrastructure Details & Controls Modal */}
+        <InfrastructureModal
+          isOpen={Boolean(selectedInfraDep)}
+          onClose={() => setSelectedInfraDep(null)}
+          deployment={selectedInfraDep}
+          onUpdated={fetchDeployments}
+        />
     </main>
   );
 }

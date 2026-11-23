@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+
+# Operating system / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# StackPilot Repos & Temp Files
+/tmp/stackpilot/
+repos/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+

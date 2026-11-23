@@ -1,0 +1,16 @@
+---
+# Default variables for Docker installation role
+
+docker_packages_ubuntu:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+docker_packages_amazon_linux:
+  - docker
+
+docker_service_state: started
+docker_service_enabled: true
+

@@ -6,7 +6,8 @@ import api from '../api';
 import {
   Globe, GitBranch, Search, Settings, FileCode, Rocket,
   Loader2, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft,
-  FolderTree, Cpu, Variable, Eye, ChevronRight, X, Plus, Trash2, Lock
+  FolderTree, Cpu, Variable, Eye, ChevronRight, X, Plus, Trash2, Lock,
+  Cloud, Server, Shield
 } from 'lucide-react';
 import { FaGithub } from 'react-icons/fa'
 const STEPS = [
@@ -65,6 +66,15 @@ export default function DeploymentWizard() {
   const [analysis, setAnalysis] = useState(null);
 
   // Step 3: Config
+  const [deploymentMode, setDeploymentMode] = useState('shared');
+  const [infrastructureConfig, setInfrastructureConfig] = useState({
+    awsRegion: 'us-east-1',
+    instanceType: 't3.micro',
+    amiOs: 'ubuntu',
+    sshAllowedCidr: '0.0.0.0/0',
+    sshKeyName: '',
+    applicationPort: 3000
+  });
   const [projectType, setProjectType] = useState('');
   const [deployFolder, setDeployFolder] = useState('.');
   const [environment, setEnvironment] = useState('development');
@@ -121,6 +131,11 @@ export default function DeploymentWizard() {
     try {
       const payload = {
         name, repoUrl, branch, environment, projectType, deployFolder,
+        deploymentMode,
+        infrastructureConfig: deploymentMode === 'dedicated' ? {
+          ...infrastructureConfig,
+          applicationPort: buildConfig.exposedPort || infrastructureConfig.applicationPort || 3000
+        } : undefined,
         envVars: envVars.filter(e => e.key && e.value),
         buildConfig, useCustomDockerfile,
         generatedDockerfile: useCustomDockerfile ? null : dockerfile,
@@ -309,7 +324,139 @@ export default function DeploymentWizard() {
               <motion.div key="s2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="flat-panel p-8">
                 <h2 className="text-2xl font-bold text-white mb-1">Configure Deployment</h2>
-                <p className="text-blue-200 text-sm mb-6">Select project type and build settings.</p>
+                <p className="text-blue-200 text-sm mb-6">Select infrastructure mode, project type, and build settings.</p>
+
+                {/* Infrastructure Mode Selection */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Deployment Infrastructure</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeploymentMode('shared')}
+                      className={`p-4 rounded-xl border text-left transition-all ${
+                        deploymentMode === 'shared'
+                          ? 'border-mint-500 bg-mint-500/10 text-white shadow-lg shadow-mint-500/10'
+                          : 'border-royal-800 bg-royal-900/40 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Server className={`w-4 h-4 ${deploymentMode === 'shared' ? 'text-mint-400' : 'text-slate-400'}`} />
+                        <span className="font-semibold text-sm">Shared Infrastructure</span>
+                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-royal-800 text-slate-300 ml-auto">Standard</span>
+                      </div>
+                      <p className="text-xs text-blue-200/70 leading-relaxed">
+                        Deploy container on StackPilot's shared Docker EC2 cluster. Fast, lightweight, zero extra AWS cost.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeploymentMode('dedicated')}
+                      className={`p-4 rounded-xl border text-left transition-all ${
+                        deploymentMode === 'dedicated'
+                          ? 'border-mint-500 bg-mint-500/10 text-white shadow-lg shadow-mint-500/10'
+                          : 'border-royal-800 bg-royal-900/40 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Cloud className={`w-4 h-4 ${deploymentMode === 'dedicated' ? 'text-mint-400' : 'text-slate-400'}`} />
+                        <span className="font-semibold text-sm">Dedicated Infrastructure</span>
+                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 ml-auto">Terraform</span>
+                      </div>
+                      <p className="text-xs text-blue-200/70 leading-relaxed">
+                        Provision an isolated AWS EC2 instance with dedicated security groups, custom sizing, and automated Docker runtime.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dedicated Infrastructure Configuration Options */}
+                {deploymentMode === 'dedicated' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-5 rounded-xl border border-cyan-500/30 bg-cyan-950/20 mb-6 space-y-4"
+                  >
+                    <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold uppercase tracking-wider">
+                      <Shield className="w-4 h-4" />
+                      AWS Dedicated Instance Configuration
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">AWS Region</label>
+                        <select
+                          value={infrastructureConfig.awsRegion}
+                          onChange={e => setInfrastructureConfig({ ...infrastructureConfig, awsRegion: e.target.value })}
+                          className={inputClass + " cursor-pointer"}
+                        >
+                          <option value="us-east-1">us-east-1 (N. Virginia)</option>
+                          <option value="us-east-2">us-east-2 (Ohio)</option>
+                          <option value="us-west-2">us-west-2 (Oregon)</option>
+                          <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                          <option value="ap-south-1">ap-south-1 (Mumbai)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Instance Type</label>
+                        <select
+                          value={infrastructureConfig.instanceType}
+                          onChange={e => setInfrastructureConfig({ ...infrastructureConfig, instanceType: e.target.value })}
+                          className={inputClass + " cursor-pointer"}
+                        >
+                          <option value="t2.micro">t2.micro (1 vCPU, 1 GB - Free Tier)</option>
+                          <option value="t3.micro">t3.micro (2 vCPU, 1 GB - Standard)</option>
+                          <option value="t3.small">t3.small (2 vCPU, 2 GB)</option>
+                          <option value="t3.medium">t3.medium (2 vCPU, 4 GB)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Operating System</label>
+                        <select
+                          value={infrastructureConfig.amiOs}
+                          onChange={e => setInfrastructureConfig({ ...infrastructureConfig, amiOs: e.target.value })}
+                          className={inputClass + " cursor-pointer"}
+                        >
+                          <option value="ubuntu">Ubuntu 22.04 LTS (Canonical)</option>
+                          <option value="amazon-linux">Amazon Linux 2023</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Trusted SSH CIDR</label>
+                        <input
+                          type="text"
+                          value={infrastructureConfig.sshAllowedCidr}
+                          onChange={e => setInfrastructureConfig({ ...infrastructureConfig, sshAllowedCidr: e.target.value })}
+                          className={inputClass + " font-mono text-xs"}
+                          placeholder="0.0.0.0/0 or 203.0.113.10/32"
+                        />
+                        <span className="text-[10px] text-blue-200/60 block mt-1">
+                          Restricts port 22 access. Use 0.0.0.0/0 or your specific IP/subnet.
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">AWS EC2 Key Pair (Optional)</label>
+                        <input
+                          type="text"
+                          value={infrastructureConfig.sshKeyName}
+                          onChange={e => setInfrastructureConfig({ ...infrastructureConfig, sshKeyName: e.target.value })}
+                          className={inputClass + " font-mono text-xs"}
+                          placeholder="e.g. my-aws-key-pair"
+                        />
+                        <span className="text-[10px] text-blue-200/60 block mt-1">
+                          Key pair name already registered in your AWS region.
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* Project Type */}
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-slate-300 mb-2">Project Type</label>
@@ -441,6 +588,22 @@ export default function DeploymentWizard() {
                 {/* Summary */}
                 <div className="bg-royal-900 rounded-xl p-4 mb-6 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-blue-200">Service</span><span className="text-white font-medium">{name}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-blue-200">Infrastructure</span>
+                    <span className="text-white font-medium flex items-center gap-1.5">
+                      {deploymentMode === 'dedicated' ? (
+                        <>
+                          <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+                          Dedicated EC2 ({infrastructureConfig.awsRegion} • {infrastructureConfig.instanceType})
+                        </>
+                      ) : (
+                        <>
+                          <Server className="w-3.5 h-3.5 text-mint-400" />
+                          Shared Docker Cluster
+                        </>
+                      )}
+                    </span>
+                  </div>
                   <div className="flex justify-between"><span className="text-blue-200">Branch</span><span className="text-white font-mono">{branch}</span></div>
                   <div className="flex justify-between"><span className="text-blue-200">Framework</span><span className="text-white">{projectType || 'Auto'}</span></div>
                   <div className="flex justify-between"><span className="text-blue-200">Deploy Folder</span><span className="text-white font-mono">{deployFolder}</span></div>

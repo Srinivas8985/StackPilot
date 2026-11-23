@@ -1,0 +1,41 @@
+---
+# StackPilot Dedicated Host Configuration Playbook
+# Configures newly provisioned AWS EC2 instances with Docker Engine,
+# system baseline tools, and readiness marker files for Jenkins deployment.
+
+- name: Configure Dedicated EC2 Host for StackPilot Deployment
+  hosts: dedicated_hosts
+  become: true
+  gather_facts: true
+
+  vars:
+    deployment_id: "{{ deployment_id | default('unassigned') }}"
+    infrastructure_id: "{{ infrastructure_id | default('unassigned') }}"
+
+  roles:
+    - role: system
+    - role: docker
+
+  post_tasks:
+    - name: Run Docker verification container
+      ansible.builtin.command: docker run --rm hello-world
+      register: docker_hello_world
+      changed_when: false
+      failed_when: false
+
+    - name: Record final completion timestamp
+      ansible.builtin.lineinfile:
+        path: /etc/stackpilot-ready
+        line: "Ansible configuration completed successfully at {{ ansible_date_time.iso8601 }}"
+        create: true
+        mode: '0644'
+
+    - name: Output configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "StackPilot Dedicated Host Configured Successfully"
+          - "Host: {{ inventory_hostname }} ({{ ansible_host | default('unknown') }})"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Docker: {{ docker_version_output.stdout | default('N/A') }}"
+          - "Verification test: {{ 'PASSED' if docker_hello_world.rc == 0 else 'WARNED' }}"
+

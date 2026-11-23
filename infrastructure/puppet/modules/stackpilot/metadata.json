@@ -1,0 +1,27 @@
+{
+  "name": "stackpilot-stackpilot",
+  "version": "1.0.0",
+  "author": "StackPilot Platform Team",
+  "summary": "Puppet configuration management module for dedicated EC2 nodes",
+  "license": "Apache-2.0",
+  "source": "https://github.com/stackpilot/stackpilot",
+  "project_page": "https://stackpilot.io",
+  "issues_url": "https://github.com/stackpilot/stackpilot/issues",
+  "dependencies": [],
+  "operatingsystem_support": [
+    {
+      "operatingsystem": "Ubuntu",
+      "operatingsystemrelease": [
+        "22.04",
+        "24.04"
+      ]
+    },
+    {
+      "operatingsystem": "Amazon",
+      "operatingsystemrelease": [
+        "2023"
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,41 @@
+---
+# Tasks for system preparation role
+
+- name: Wait for cloud-init / bootstrap to finish if present
+  ansible.builtin.command: cloud-init status --wait
+  changed_when: false
+  failed_when: false
+  when: system_wait_for_cloud_init | bool
+
+- name: Update apt cache (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install baseline system packages (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: "{{ system_packages_ubuntu }}"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install baseline system packages (RedHat/Amazon Linux)
+  ansible.builtin.dnf:
+    name: "{{ system_packages_amazon_linux }}"
+    state: present
+  when: ansible_os_family == "RedHat"
+  failed_when: false
+
+- name: Create StackPilot directory hierarchy
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+    mode: '0775'
+  loop:
+    - "{{ stackpilot_base_dir }}"
+    - "{{ stackpilot_app_dir }}"
+    - "{{ stackpilot_logs_dir }}"
+    - "{{ stackpilot_metadata_dir }}"
+

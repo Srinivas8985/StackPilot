@@ -1,0 +1,4 @@
+# Example inventory for StackPilot dedicated EC2 nodes
+[dedicated_hosts]
+# dedicated-node-1 ansible_host=54.210.12.34 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/stackpilot-key.pem deployment_id=deploy-123 infrastructure_id=infra-456
+

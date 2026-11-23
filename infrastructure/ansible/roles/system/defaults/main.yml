@@ -1,0 +1,6 @@
+---
+# Default variables for the system role
+system_timezone: "UTC"
+system_wait_for_cloud_init: true
+system_cloud_init_timeout: 300
+

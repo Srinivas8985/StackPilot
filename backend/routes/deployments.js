@@ -67,6 +67,11 @@ router.post('/:id/start', auth, deploymentController.startDeployment);
 // @access  Private
 router.post('/:id/redeploy', auth, deploymentController.redeployDeployment);
 
+// @route   POST api/deployments/:id/trigger-remote-deploy
+// @desc    Trigger remote Jenkins deployment to dedicated EC2
+// @access  Private
+router.post('/:id/trigger-remote-deploy', auth, deploymentController.triggerRemoteDeploy);
+
 // @route   DELETE api/deployments/:id
 // @desc    Delete a deployment
 // @access  Private
