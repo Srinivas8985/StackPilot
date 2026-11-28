@@ -177,9 +177,12 @@ PROJECT DETAILS:
 - Default WSGI: project.wsgi:application\n`;
   } else if (projectType === 'spring-boot') {
     prompt += `\nFRAMEWORK HINTS:
-- Use eclipse-temurin Java image
-- Use multi-stage build: build with Maven/Gradle, run with JRE
-- Copy the built JAR file\n`;
+- Use eclipse-temurin:17-jdk-alpine for the build stage and eclipse-temurin:17-jre-alpine for the run stage
+- Use a multi-stage build: compile with Maven, run with JRE
+- CRITICAL: Do NOT use ./mvnw because the Maven Wrapper is often not committed to repositories. Instead install Maven in the builder stage with: RUN apk add --no-cache maven and then build with: RUN mvn clean package -DskipTests --no-transfer-progress
+- Copy the built JAR: COPY --from=build /app/target/*.jar app.jar
+- EXPOSE 8080
+- Use CMD ["java", "-jar", "app.jar"]\n`;
   }
 
   return prompt;
@@ -252,14 +255,17 @@ RUN python manage.py collectstatic --noinput
 EXPOSE ${port}
 CMD ["gunicorn", "--bind", "0.0.0.0:${port}", "config.wsgi:application"]`,
 
-    'spring-boot': `FROM eclipse-temurin:21-jdk AS builder
+    'spring-boot': `# Stage 1: Build
+FROM eclipse-temurin:17-jdk-alpine AS build
+RUN apk add --no-cache maven
 WORKDIR /app
 COPY . .
-RUN ./mvnw package -DskipTests
+RUN mvn clean package -DskipTests --no-transfer-progress
 
-FROM eclipse-temurin:21-jre
+# Stage 2: Run
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=builder /app/target/*.jar app.jar
+COPY --from=build /app/target/*.jar app.jar
 EXPOSE ${port}
 CMD ["java", "-jar", "app.jar"]`,
 
